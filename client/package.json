@@ -1,0 +1,39 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@heroui/react": "2.8.10",
+    "@tanstack/react-query": "5.101.3",
+    "axios": "1.18.1",
+    "lodash": "4.18.1",
+    "lucide-react": "1.25.0",
+    "minisearch": "^7.2.0",
+    "motion": "12.42.2",
+    "qs": "6.15.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-router": "8.2.0",
+    "react-virtuoso": "4.18.11",
+    "use-debounce": "^10.1.1",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@babel/core": "^8.0.1",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/babel__core": "^7.20.5",
+    "@types/lodash": "4.17.24",
+    "@types/node": "^26.1.1",
+    "@types/qs": "6.15.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "~7.0.2",
+    "vite": "^8.1.5"
+  }
+}

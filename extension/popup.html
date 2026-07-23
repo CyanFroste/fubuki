@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: Inter, sans-serif;
+        padding: 10px;
+        width: 300px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 5px;
+      }
+
+      input {
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 20px;
+      }
+
+      button {
+        width: 100%;
+        padding: 5px;
+        margin-bottom: 20px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Fubuki</h1>
+
+    <label for="host">Host (of your link manager)</label>
+    <input id="host" type="text" placeholder="eg. https://your-domain.com" />
+    <button id="save">Save</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

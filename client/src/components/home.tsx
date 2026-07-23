@@ -1,0 +1,600 @@
+import { useEffect, useRef, useState } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useDebounce } from 'use-debounce'
+import {
+  Autocomplete,
+  AutocompleteItem,
+  Button,
+  cn,
+  Image,
+  Input,
+  Modal,
+  ModalContent,
+  ScrollShadow,
+  Switch,
+  Textarea,
+  useDisclosure,
+} from '@heroui/react'
+import {
+  CheckIcon,
+  ClockIcon,
+  HeartIcon,
+  HeartOffIcon,
+  MoveRightIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  ReplaceIcon,
+  SearchIcon,
+  TrashIcon,
+} from 'lucide-react'
+import { VirtualList } from '@/components/lists'
+import { useUrlParams, Client, link, createSearchIndex } from '@/utils'
+import type { Domain, Link, Nullable } from '@/types'
+import type {
+  ContainerProps as ListContainerProps,
+  HeaderProps as ListHeaderProps,
+  FooterProps as ListFooterProps,
+} from '@/components/lists'
+
+const client = new Client()
+const searchIndex = createSearchIndex()
+
+export function HomeScreen() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const params = useUrlParams(client.parseGetLinksParams.bind(client))
+
+  const queryLinks = useQuery({
+    queryKey: ['links', params],
+    queryFn: async () => await client.getLinks(params),
+  })
+
+  const queryDomains = useQuery({
+    queryKey: ['domains'],
+    queryFn: client.getDomains.bind(client),
+  })
+
+  const linksMap = new Map(queryLinks.data?.map(it => [it.url, it]) ?? [])
+  const [filtered, setFiltered] = useState<Link[]>([])
+  const [counts, setCounts] = useState<Map<string, number>>(new Map())
+
+  const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 500)
+
+  const [linksToRemove, setLinksToRemove] = useState<Link[]>([])
+  const [urlsToProcess, setUrlsToProcess] = useState<string[]>([])
+
+  const [oldHost, setOldHost] = useState('')
+  const [newHost, setNewHost] = useState('')
+
+  const replaceHostModal = useDisclosure()
+  const removeLinksModal = useDisclosure()
+  const processUrlsModal = useDisclosure()
+
+  const removeConfirmButtonRef = useRef<HTMLButtonElement>(null)
+
+  const refetchData = async () => {
+    await queryClient.refetchQueries({ queryKey: ['links'] })
+    await queryDomains.refetch()
+  }
+
+  const mutationProcessUrl = useMutation({
+    mutationFn: async () => await client.processUrls(urlsToProcess),
+    onSuccess: failed => {
+      if (!failed.length) refetchData()
+      processUrlsModal.onClose()
+      setUrlsToProcess([])
+    },
+  })
+
+  const mutationReplaceHost = useMutation({
+    mutationFn: async () => {
+      if (!oldHost.trim() || !newHost.trim() || oldHost === newHost) return
+      await client.replaceHost(oldHost, newHost)
+    },
+    onSuccess: () => {
+      refetchData()
+      replaceHostModal.onClose()
+      navigate(link('/', { host: newHost }))
+      setOldHost('')
+      setNewHost('')
+    },
+  })
+
+  const mutationRemoveLinks = useMutation({
+    mutationFn: async () => {
+      if (!linksToRemove.length) return
+      await client.removeLinks(linksToRemove.map(it => it.url))
+    },
+    onSuccess: () => {
+      refetchData()
+      removeLinksModal.onClose()
+
+      if (params.host) {
+        let count = counts.get(params.host) ?? 0
+
+        for (const link of linksToRemove) if (link.host === params.host) count -= 1
+        if (count <= 0) navigate(link('/'))
+      }
+
+      setLinksToRemove([])
+    },
+  })
+
+  useEffect(() => {
+    searchIndex.removeAll()
+    searchIndex.addAll(queryLinks.data ?? [])
+  }, [queryLinks.data])
+
+  useEffect(() => {
+    if (!debouncedSearchQuery.trim()) return setFiltered(queryLinks.data ?? [])
+
+    const data = searchIndex
+      .search(debouncedSearchQuery)
+      .map(it => linksMap.get(it.id))
+      .filter(Boolean) as Link[]
+
+    setFiltered(data)
+  }, [queryLinks.data, debouncedSearchQuery])
+
+  useEffect(() => {
+    if (!queryLinks.data || !queryDomains.data) return
+    const map = new Map<string, number>()
+
+    for (const link of queryLinks.data)
+      if (queryDomains.data.some(it => it.host === link.host))
+        map.set(link.host, (map.get(link.host) ?? 0) + 1)
+
+    setCounts(map)
+  }, [queryLinks.data, queryDomains.data])
+
+  useEffect(() => {
+    setNewHost(oldHost)
+  }, [oldHost])
+
+  return (
+    <>
+      <div className="fixed inset-x-0 top-0 z-50 bg-background/40 backdrop-blur-lg border-b border-divider">
+        <div className="container h-[calc(--spacing(12)-1px)] mx-auto flex items-center px-4">
+          <RouterLink to="/" className="flex items-center gap-2.5 group">
+            <Image radius="sm" shadow="none" src="/images/icon.png" className="size-8" />
+            <div className="text-2xl font-semibold leading-none group-hover:text-primary-500 transition-colors">
+              Fubuki
+            </div>
+          </RouterLink>
+
+          <Button
+            size="sm"
+            radius="none"
+            variant="light"
+            color="primary"
+            className="ml-auto text-small h-full"
+            onPress={processUrlsModal.onOpen}
+          >
+            <PlusIcon className="text-base" /> Add Links
+          </Button>
+        </div>
+      </div>
+
+      <div className="container mx-auto flex h-full">
+        <div className="flex pt-12 w-80 h-full shrink-0">
+          <div className="flex flex-col size-full border-r border-divider">
+            <div className="flex flex-col p-4 gap-4">
+              <Input
+                radius="sm"
+                startContent={<SearchIcon className="text-lg" />}
+                placeholder="Search..."
+                value={searchQuery}
+                onValueChange={setSearchQuery}
+                onClear={() => setSearchQuery('')}
+              />
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <HeartIcon
+                  className={cn(
+                    params?.favorite ? 'text-success-600' : 'text-primary-600',
+                    'text-lg',
+                  )}
+                />
+
+                <div className="mr-auto text-small font-medium">Favorites only</div>
+
+                <Switch
+                  size="sm"
+                  color="success"
+                  isSelected={!!params?.favorite}
+                  onValueChange={value => navigate(link('/', { ...params, favorite: value }))}
+                />
+              </label>
+
+              <hr className="border-divider" />
+            </div>
+
+            <div className="flex items-center px-4 pb-4">
+              <div className="text-lg font-semibold">Domains</div>
+
+              <Button
+                isIconOnly
+                variant="light"
+                radius="full"
+                className="ml-auto"
+                onPress={() => {
+                  setOldHost(params.host ?? '')
+                  replaceHostModal.onOpen()
+                }}
+              >
+                <ReplaceIcon className="text-lg" />
+              </Button>
+            </div>
+
+            <div className="flex flex-col h-full overflow-auto px-4 pb-4">
+              {queryDomains.data?.map(domain => (
+                <DomainCard
+                  key={domain.host}
+                  data={domain}
+                  count={counts.get(domain.host)}
+                  isActive={params.host === domain.host}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <VirtualList
+          data={filtered}
+          components={{ Container: ListContainer, Header: ListHeader, Footer: ListFooter }}
+          className="shrink mr-4"
+        >
+          {item => (
+            <LinkCard
+              key={item.url}
+              data={item}
+              refetchData={refetchData}
+              domain={queryDomains.data?.find(it => it.host === item.host)}
+              onRemove={() => {
+                removeLinksModal.onOpen()
+                setLinksToRemove([item])
+
+                setTimeout(() => removeConfirmButtonRef.current?.focus(), 100)
+              }}
+            />
+          )}
+        </VirtualList>
+      </div>
+
+      <Modal
+        size="5xl"
+        radius="sm"
+        hideCloseButton
+        isOpen={replaceHostModal.isOpen}
+        onOpenChange={replaceHostModal.onOpenChange}
+        isDismissable={!mutationReplaceHost.isPending}
+        isKeyboardDismissDisabled={mutationReplaceHost.isPending}
+      >
+        <ModalContent>
+          <div className="flex flex-col">
+            <div className="text-large font-semibold p-4 border-b border-divider leading-none">
+              Replace Host
+            </div>
+
+            <div className="p-4 border-b border-divider h-80">
+              <div className="flex items-center gap-4">
+                <Autocomplete
+                  radius="sm"
+                  label="Select Domain"
+                  value={oldHost}
+                  onChange={(key: Nullable<React.Key>) => setOldHost(key?.toString() ?? '')}
+                  defaultItems={queryDomains.data ?? []}
+                >
+                  {it => (
+                    <AutocompleteItem key={it.host} startContent={<DomainIcon data={it} />}>
+                      {it.host}
+                    </AutocompleteItem>
+                  )}
+                </Autocomplete>
+
+                <MoveRightIcon className="text-xl shrink-0 text-default-500" />
+
+                <Input
+                  autoFocus
+                  radius="sm"
+                  label="New Host"
+                  value={newHost}
+                  onValueChange={setNewHost}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 p-4 justify-end">
+              <Button radius="sm" variant="flat" onPress={replaceHostModal.onClose}>
+                Cancel
+              </Button>
+
+              <Button
+                radius="sm"
+                color="success"
+                isLoading={mutationReplaceHost.isPending}
+                onPress={() => mutationReplaceHost.mutate()}
+                isDisabled={!oldHost.trim() || !newHost.trim() || oldHost === newHost}
+              >
+                <CheckIcon className="text-lg" /> Confirm
+              </Button>
+            </div>
+          </div>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        size="5xl"
+        radius="sm"
+        hideCloseButton
+        isOpen={removeLinksModal.isOpen}
+        onOpenChange={removeLinksModal.onOpenChange}
+        isDismissable={!mutationRemoveLinks.isPending}
+        isKeyboardDismissDisabled={mutationRemoveLinks.isPending}
+      >
+        <ModalContent>
+          <div className="flex flex-col">
+            <div className="text-large font-semibold p-4 border-b border-divider leading-none">
+              Remove Links
+            </div>
+
+            <div className="flex flex-col gap-2 p-4 border-b border-divider h-80 overflow-auto">
+              {linksToRemove.map((it, index) => (
+                <div key={it.url} className="text-small text-default-500">
+                  {index + 1}. {it.url}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 p-4 justify-end">
+              <Button radius="sm" variant="flat" onPress={removeLinksModal.onClose}>
+                Cancel
+              </Button>
+
+              <Button
+                radius="sm"
+                color="danger"
+                ref={removeConfirmButtonRef}
+                isDisabled={!linksToRemove.length}
+                onPress={() => mutationRemoveLinks.mutate()}
+                isLoading={mutationRemoveLinks.isPending}
+              >
+                <CheckIcon className="text-lg" /> Confirm
+              </Button>
+            </div>
+          </div>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        size="5xl"
+        radius="sm"
+        hideCloseButton
+        isOpen={processUrlsModal.isOpen}
+        onOpenChange={processUrlsModal.onOpenChange}
+        isDismissable={!mutationProcessUrl.isPending}
+        isKeyboardDismissDisabled={mutationProcessUrl.isPending}
+      >
+        <ModalContent>
+          <div className="flex flex-col">
+            <div className="text-large font-semibold p-4 border-b border-divider leading-none">
+              Add Links
+            </div>
+
+            <div className="flex flex-col border-b border-divider">
+              <Textarea
+                radius="none"
+                minRows={40}
+                maxRows={100}
+                value={urlsToProcess.join('\n')}
+                onValueChange={value => setUrlsToProcess(value.split('\n'))}
+                placeholder="Paste newline seperated URLs here..."
+              />
+            </div>
+
+            <div className="flex items-center gap-2 p-4 justify-end">
+              <Button radius="sm" variant="flat" onPress={processUrlsModal.onClose}>
+                Cancel
+              </Button>
+
+              <Button
+                radius="sm"
+                color="success"
+                isDisabled={!urlsToProcess.length}
+                onPress={() => mutationProcessUrl.mutate()}
+                isLoading={mutationProcessUrl.isPending}
+              >
+                <CheckIcon className="text-lg" /> Confirm
+              </Button>
+            </div>
+          </div>
+        </ModalContent>
+      </Modal>
+    </>
+  )
+}
+
+type LinkCardProps = {
+  data: Link
+  domain?: Domain
+  refetchData: () => void
+  onRemove: () => void
+}
+
+function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
+  const placeholderThumbnail = '/images/thumbnail-placeholder.png'
+  const [thumbnail, setThumbnail] = useState(data.thumbnail ?? placeholderThumbnail)
+
+  const modified = new Date(data.modified!).toLocaleString('en-IN').replace(',', '')
+
+  useEffect(() => {
+    setThumbnail(data.thumbnail ?? placeholderThumbnail)
+  }, [data.thumbnail])
+
+  const mutationProcessUrl = useMutation({
+    mutationFn: async () => await client.processUrls([data.url]),
+    onSuccess: failed => {
+      if (!failed.length) refetchData()
+    },
+  })
+
+  const mutationSetFavorite = useMutation({
+    mutationFn: async () =>
+      await client.setLinkFavorite({ url: data.url, favorite: !data.favorite }),
+    onSuccess: () => {
+      refetchData()
+    },
+  })
+
+  return (
+    <div className="flex p-4 border-b border-divider gap-6 h-36">
+      <div className="h-full aspect-video overflow-hidden rounded-small shrink-0">
+        <Image
+          isBlurred
+          width="100%"
+          height="100%"
+          radius="none"
+          shadow="none"
+          src={thumbnail}
+          className="object-contain"
+          classNames={{ wrapper: 'size-full' }}
+          onError={() => setThumbnail(placeholderThumbnail)}
+        />
+      </div>
+
+      <div className="flex flex-col size-full overflow-auto">
+        <RouterLink
+          to={data.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex flex-col gap-0.5 w-full overflow-auto"
+        >
+          {data.title && (
+            <ScrollShadow hideScrollBar orientation="horizontal" className="text-nowrap">
+              {data.title}
+            </ScrollShadow>
+          )}
+
+          <div className="flex items-center gap-1">
+            {domain && <DomainIcon data={domain} />}
+
+            <ScrollShadow
+              hideScrollBar
+              orientation="horizontal"
+              className="text-nowrap text-small text-default-500"
+            >
+              {data.url}
+            </ScrollShadow>
+          </div>
+        </RouterLink>
+
+        <div className="flex items-end mt-auto">
+          <div className="text-tiny flex items-center gap-1 text-default-500">
+            <ClockIcon /> {modified}
+          </div>
+
+          <Button
+            isIconOnly
+            variant="light"
+            radius="full"
+            color="danger"
+            className="ml-auto"
+            onPress={onRemove}
+          >
+            <TrashIcon className="text-base text-danger-600" />
+          </Button>
+
+          <Button
+            isIconOnly
+            radius="full"
+            variant="light"
+            isLoading={mutationProcessUrl.isPending}
+            onPress={() => mutationProcessUrl.mutate()}
+          >
+            <RefreshCwIcon className="text-base" />
+          </Button>
+
+          <Button
+            isIconOnly
+            radius="full"
+            color="success"
+            className="ml-2 text-base text-success-600"
+            variant={data.favorite ? 'flat' : 'light'}
+            isLoading={mutationSetFavorite.isPending}
+            onPress={() => mutationSetFavorite.mutate()}
+          >
+            {data.favorite ? <HeartOffIcon /> : <HeartIcon />}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type DomainCardProps = { data: Domain; count?: number; isActive?: boolean }
+
+function DomainCard({ data, count, isActive }: DomainCardProps) {
+  return (
+    <Button
+      as={RouterLink}
+      to={link('/', { host: data.host })}
+      key={data.host}
+      radius="sm"
+      variant={isActive ? 'flat' : 'light'}
+      className="justify-start shrink-0 px-2"
+    >
+      <DomainIcon data={data} />
+
+      <ScrollShadow hideScrollBar orientation="horizontal">
+        {data.host}
+      </ScrollShadow>
+
+      {count && (
+        <div className="ml-auto text-tiny py-1 px-2 leading-none text-default-600 bg-default-50 rounded-full">
+          {count}
+        </div>
+      )}
+    </Button>
+  )
+}
+
+type DomainIconProps = { data: Domain }
+
+function DomainIcon({ data }: DomainIconProps) {
+  const [placeholder, setPlaceholder] = useState(`https://${data.host}/favicon.ico`)
+  const [icon, setIcon] = useState(data.icon ?? placeholder)
+
+  useEffect(() => {
+    setIcon(data.icon ?? placeholder)
+  }, [data.icon])
+
+  return (
+    <Image
+      src={icon}
+      radius="none"
+      shadow="none"
+      removeWrapper
+      disableSkeleton
+      className="size-4 shrink-0 mr-1"
+      onError={() => {
+        const p = '/images/domain-icon-placeholder.png'
+        setPlaceholder(p)
+        setIcon(p)
+      }}
+    />
+  )
+}
+
+function ListContainer(props: ListContainerProps) {
+  return <div {...props} className="flex flex-col shrink-0 w-full" />
+}
+
+function ListHeader(props: ListHeaderProps) {
+  return <div {...props} className="h-12" />
+}
+
+function ListFooter(props: ListFooterProps) {
+  return <div {...props} className="h-12" />
+}
