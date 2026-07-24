@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+@plugin '../hero.ts';
+
+@source '../node_modules/@heroui/theme/dist/**/*.{js,mjs,ts,jsx,tsx}';
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@layer base {
+  svg {
+    @apply size-[1em];
+  }
+
+  ::selection {
+    @apply bg-default-700 text-background;
+  }
+
+  ::-webkit-scrollbar {
+    @apply size-2.5;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-default-200/50;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-default-100/25;
+  }
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/InterVariable.ttf') format('truetype');
+  font-weight: 300 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMonoVariable.ttf') format('truetype');
+  font-weight: 300 900;
+  font-style: normal;
+}

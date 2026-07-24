@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "fubuki-launcher",
+  "identifier": "com.cyan.fubuki-launcher",
+  "build": {
+    "beforeDevCommand": "pnpm vite:dev",
+    "beforeBuildCommand": "pnpm vite:build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../build"
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": false,
+    "category": "Utility",
+    "copyright": "Copyright © 2026 Cyan Froste",
+    "shortDescription": "Launcher for Fubuki link manager",
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "../../bin/fubuki"
+    ],
+    "resources": {
+      "../../bin/client/": "client/"
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Fubuki Launcher",
+        "label": "main",
+        "decorations": false,
+        "width": 1600,
+        "height": 900,
+        "center": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; img-src * data: asset:; media-src * data: asset: http://asset.localhost;",
+      "devCsp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; img-src * data: asset:; media-src * data: asset: http://asset.localhost;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**/*"
+        ]
+      }
+    }
+  }
+}
