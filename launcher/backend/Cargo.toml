@@ -11,9 +11,13 @@ tauri = { version = "2.11.5", features = ["protocol-asset", "devtools"] }
 tauri-plugin-opener = "2.5.4"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
 tokio = { version = "1.52.4", features = ["macros"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 anyhow = "1.0.103"
 serde_with = "3.21.0"
-tauri-plugin-fs = "2"
+tauri-plugin-deep-link = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

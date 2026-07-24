@@ -12,6 +12,7 @@ import {
 } from '@tauri-apps/api/path'
 import { exists, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Child, Command } from '@tauri-apps/plugin-shell'
+import { getCurrent as getStartUrls, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query'
 import { Button, Input } from '@heroui/react'
 import {
@@ -31,11 +32,13 @@ const SIDECAR_KEY = '../../bin/fubuki'
 const CONFIG_FILE_NAME = 'fubuki-config.json'
 
 const currentWindow = getCurrentWindow()
+const [initialStartUrl] = (await getStartUrls()) ?? []
 
 export function Window() {
   const [command, setCommand] = useState<Command<string> | null>(null)
   const [child, setChild] = useState<Child | null>(null)
   const [outputs, setOutputs] = useState<string[]>([])
+  const [startUrl, setStartUrl] = useState(initialStartUrl)
 
   const [port, setPort] = useState('')
   const [dbPath, setDbPath] = useState('')
@@ -87,7 +90,8 @@ export function Window() {
   const mutationSaveConfig = useMutation({
     mutationFn: async () => await setConfig({ port: +port, dbPath }),
     onSuccess: async () => {
-      addOutput('config saved')
+      const path = `${await appConfigDir()}${pathSeparator()}${CONFIG_FILE_NAME}`
+      addOutput(`config saved to path: ${path}`)
       await init(true)
     },
   })
@@ -118,9 +122,8 @@ export function Window() {
   }
 
   const onToggle = async () => {
-    if (!command) return
-
     try {
+      if (!command) throw new Error('no command found to start the process')
       if (!child) {
         addOutput('starting...')
         setChild(await command.spawn())
@@ -136,8 +139,22 @@ export function Window() {
 
   useEffect(() => {
     init()
+  }, [command])
+
+  useEffect(() => {
+    const onDeepLink = async ([url]: string[]) => {
+      if (!url) return
+      if (command && !child) onToggle() // takes time to start the process
+
+      // dispatch after a while
+      setTimeout(() => sendDataFromDeepLink(url, +port), 1000)
+    }
+
+    if (startUrl) onDeepLink([startUrl]).then(() => setStartUrl(''))
+    const unlisten = onOpenUrl(onDeepLink)
+
     return () => {
-      child?.kill()
+      unlisten.then(fn => fn())
     }
   }, [command, child])
 
@@ -300,4 +317,21 @@ async function setConfig(config: Config) {
   await writeTextFile(CONFIG_FILE_NAME, JSON.stringify(config), {
     baseDir: BaseDirectory.AppConfig,
   })
+}
+
+async function sendDataFromDeepLink(deepLinkUrl: string, port: number) {
+  // extract data from deep link's query params ???
+  const searchParams = new URL(deepLinkUrl).searchParams
+  const action = searchParams.get('action')
+  const data = searchParams.get('data')
+  const body = JSON.parse(decodeURIComponent(data ?? '[]'))
+
+  const res = await fetch(`http://localhost:${port}/api/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) throw new Error((await res.text()) ?? res.statusText)
+  return await res.json()
 }

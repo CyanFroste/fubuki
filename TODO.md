@@ -1,1 +1,1 @@
-- deeplink launcher to accept links from extension
+- deeplink launcher to accept links from extension (unstable because of security issues)

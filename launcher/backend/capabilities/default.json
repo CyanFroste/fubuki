@@ -21,7 +21,9 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-resizable",
     "core:window:allow-toggle-maximize",
+    "deep-link:default",
     "shell:default",
+    "fs:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -52,7 +54,6 @@
         }
       ]
     },
-    "fs:default",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [

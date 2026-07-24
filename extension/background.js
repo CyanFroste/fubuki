@@ -17,6 +17,9 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Send page data to Fubuki',
     contexts: ['page'],
   })
+
+  // chrome.storage.local.set({ host: 'launcher' })
+  chrome.storage.local.set({ host: 'http://localhost:3200' })
 })
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -29,11 +32,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       sendBasicNotification('Fubuki Success', `successfully sent link: ${linkUrl}`)
 
-      const res = await fetch(`${host}/api/process-urls`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([linkUrl]),
-      })
+      const res =
+        host === 'launcher'
+          ? await sendToLauncher('process-urls', [linkUrl])
+          : await sendToServer(host, 'process-urls', [linkUrl])
 
       if (!res.ok) throw new Error((await res.text()) || res.statusText)
 
@@ -70,19 +72,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       sendBasicNotification('Fubuki Success', 'successfully sent page data')
 
-      let resAddLinks = await fetch(`${host}/api/add-links`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([link]),
-      })
+      let resAddLinks =
+        host === 'launcher'
+          ? await sendToLauncher('add-links', [link])
+          : await sendToServer(host, 'add-links', [link])
 
       if (!resAddLinks.ok) throw new Error((await resAddLinks.text()) || resAddLinks.statusText)
 
-      const resAddDomains = await fetch(`${host}/api/add-domains`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([domain]),
-      })
+      const resAddDomains =
+        host === 'launcher'
+          ? await sendToLauncher('add-domains', [domain])
+          : await sendToServer(host, 'add-domains', [domain])
 
       // mostly not reporting UNIQUENESS errors
       // if (!resAddDomains.ok)
@@ -92,6 +92,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
   }
 })
+
+// this causes a new tab to open and not a fun ui experience tbh...
+async function sendToLauncher(action, data) {
+  const url = `fubuki://?action=${action}&data=${encodeURIComponent(JSON.stringify(data))}`
+  const tab = await chrome.tabs.create({ url })
+
+  setTimeout(() => chrome.tabs.remove(tab.id), 1000)
+  return { ok: true }
+}
+
+async function sendToServer(host, action, data) {
+  return await fetch(`${host}/api/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
 
 function extractData() {
   const title = document.title
