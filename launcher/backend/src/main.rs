@@ -2,6 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use anyhow::Result;
+use std::fs;
+use tauri::Manager;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,14 +21,18 @@ async fn main() -> Result<()> {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![])
-        // .setup(|app| {
-        //     #[cfg(any(windows, target_os = "linux"))]
-        //     {
-        //         use tauri_plugin_deep_link::DeepLinkExt;
-        //         app.deep_link().register_all()?;
-        //     }
-        //     Ok(())
-        // })
+        .setup(|app| {
+            // #[cfg(any(windows, target_os = "linux"))]
+            // {
+            //     use tauri_plugin_deep_link::DeepLinkExt;
+            //     app.deep_link().register_all()?;
+            // }
+
+            _ = fs::create_dir_all(app.path().app_config_dir()?);
+            _ = fs::create_dir_all(app.path().app_data_dir()?);
+
+            Ok(())
+        })
         .run(tauri::generate_context!())?;
 
     Ok(())
