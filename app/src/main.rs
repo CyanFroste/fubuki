@@ -8,7 +8,7 @@ use crate::types::{Config, GetLinksParams, Result};
 use crate::utils::{print_items, read_json_array_from_file};
 use clap::{Args, Parser, Subcommand};
 use reqwest::Client as HttpClient;
-use serde_json::to_string_pretty;
+use serde_json::{from_str as json_from_str, to_string_pretty};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -16,7 +16,12 @@ use std::path::PathBuf;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
-    let config = Config::find("config.json", 5).and_then(Config::new)?;
+
+    let config = if let Some(value) = args.config.as_ref() {
+        json_from_str(value)?
+    } else {
+        Config::find("config.json", 5).and_then(Config::new)?
+    };
 
     let user_agent = format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     let http_client = HttpClient::builder().user_agent(user_agent).build()?;
@@ -82,7 +87,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
 
-        None => server::run(state).await,
+        None => server::run(state, args.client_path).await,
     }
 }
 
@@ -91,9 +96,12 @@ async fn main() -> Result<()> {
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
-    /// Namespace of the variables provided in the configuration
-    #[arg(short, long, default_value = "default", global = true)]
-    pub config: String,
+    /// Configuration as JSON
+    #[arg(short, long, global = true)]
+    pub config: Option<String>,
+    /// Path to the client directory [default: "{exe_path}/client"]
+    #[arg(long)]
+    pub client_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]

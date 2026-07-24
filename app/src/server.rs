@@ -6,19 +6,19 @@ use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
 use std::env;
+use std::path::PathBuf;
 use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
-pub async fn run(state: State) -> Result<()> {
+pub async fn run(state: State, client_path: Option<PathBuf>) -> Result<()> {
     let port = state.config.port;
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
 
-    let client_path = env::current_exe()?
-        .parent()
-        .map(|p| p.join("client"))
-        .context("failed to get exe path")?
-        .to_path_buf();
+    let client_path = client_path
+        .or_else(|| Some(env::current_exe().ok()?.parent()?.join("client")))
+        .filter(|x| x.exists())
+        .context("client path not found")?;
 
     let static_service =
         ServeDir::new(&client_path).fallback(ServeFile::new(client_path.join("index.html")));
