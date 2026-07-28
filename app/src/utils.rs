@@ -1,4 +1,5 @@
-use crate::types::Result;
+use crate::types::{Result, ScrapedData};
+use anyhow::anyhow;
 use scraper::{Html, Selector};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -50,6 +51,27 @@ pub fn host_with_port(url: &Url) -> Option<String> {
     } else {
         Some(url.host_str()?.to_string())
     }
+}
+
+pub fn scrape_data(content: &str, url: &Url) -> Result<ScrapedData> {
+    let document = Html::parse_document(content);
+    
+    let selector = Selector::parse("title").map_err(|err| anyhow!("{err}"))?;
+    let title = document.select(&selector).next().map(|x| x.inner_html());
+
+    let selector =
+        Selector::parse(r#"meta[property="og:image"]"#).map_err(|err| anyhow!("{err}"))?;
+    let thumbnail = document
+        .select(&selector)
+        .next()
+        .and_then(|x| x.value().attr("content"))
+        .map(|x| x.to_string());
+
+    Ok(ScrapedData {
+        title,
+        thumbnail,
+        icon: scrape_icon(&document, url.clone()),
+    })
 }
 
 pub fn scrape_icon(document: &Html, mut url: Url) -> Option<String> {

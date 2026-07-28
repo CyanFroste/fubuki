@@ -4,28 +4,30 @@ pub mod types;
 pub mod utils;
 
 use crate::state::State;
-use crate::types::{Config, GetLinksParams, Result};
+use crate::types::{BrowserTask, Config, GetLinksParams, Result};
 use crate::utils::{print_items, read_json_array_from_file};
 use clap::{Args, Parser, Subcommand};
-use reqwest::Client as HttpClient;
+use obscura::Browser;
 use serde_json::{from_str as json_from_str, to_string_pretty};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
-    let config = if let Some(value) = args.config.as_ref() {
+    let config = if let Some(value) = &args.config {
         json_from_str(value)?
     } else {
         Config::find("config.json", 5).and_then(Config::new)?
     };
 
-    let user_agent = format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
-    let http_client = HttpClient::builder().user_agent(user_agent).build()?;
-    let state = State::new(config, http_client);
+    let (tx, rx) = mpsc::channel::<BrowserTask>(16);
+    spawn_browser_worker(rx);
+
+    let state = State::new(config, tx)?;
 
     match &args.command {
         Some(Command::Init) => state.db.init().await,
@@ -145,4 +147,35 @@ pub struct AddArgs {
     /// Accept input as newline delimited JSON (NDJSON)
     #[arg(short, long)]
     ndjson: bool,
+}
+
+fn spawn_browser_worker(mut rx: mpsc::Receiver<BrowserTask>) {
+    std::thread::spawn(|| -> Result<()> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .inspect_err(|err| eprintln!("{err}"))?
+            .block_on(async move {
+                let browser = Browser::builder()
+                    .stealth(true)
+                    .build()
+                    .inspect_err(|err| eprintln!("{err}"))?;
+
+                while let Some(BrowserTask { url, res }) = rx.recv().await {
+                    println!("browser task: {url}");
+
+                    let content = async {
+                        let mut page = browser.new_page().await?;
+                        page.goto(url.as_str()).await?;
+
+                        Ok(page.content())
+                    }
+                    .await;
+
+                    _ = res.send(content);
+                }
+
+                Ok(())
+            })
+    });
 }

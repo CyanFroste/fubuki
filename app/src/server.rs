@@ -15,26 +15,18 @@ pub async fn run(state: State, client_path: Option<PathBuf>) -> Result<()> {
     let port = state.config.port;
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
 
-    let client_path = client_path
-        .or_else(|| Some(env::current_exe().ok()?.parent()?.join("client")))
-        .filter(|x| x.exists())
-        .context("client path not found")?;
+    let static_service = if !cfg!(debug_assertions) {
+        let client_path = client_path
+            .or_else(|| Some(env::current_exe().ok()?.parent()?.join("client")))
+            .filter(|x| x.exists())
+            .context("client not found")?;
 
-    let static_service =
-        ServeDir::new(&client_path).fallback(ServeFile::new(client_path.join("index.html")));
+        Some(ServeDir::new(&client_path).fallback(ServeFile::new(client_path.join("index.html"))))
+    } else {
+        None
+    };
 
-    let router = create_router(state, static_service);
-    let server = axum::serve(listener, router).with_graceful_shutdown(shutdown_signal());
-    let url = format!("http://localhost:{port}");
-
-    println!("[server] running on {url}");
-    server.await?;
-
-    Ok(())
-}
-
-fn create_router(state: State, static_service: ServeDir<ServeFile>) -> Router {
-    let api = Router::new()
+    let api_routes = Router::new()
         .route("/process-urls", post(process_urls_handler))
         .route("/get-links", post(get_links_handler))
         .route("/get-domains", post(get_domains_handler))
@@ -45,11 +37,23 @@ fn create_router(state: State, static_service: ServeDir<ServeFile>) -> Router {
         .route("/replace-host", post(replace_host_handler))
         .with_state(state);
 
-    Router::new()
-        .nest("/api", api)
-        .fallback_service(static_service)
-        .layer(CorsLayer::permissive())
+    let mut router = Router::new().nest("/api", api_routes);
+
+    if let Some(service) = static_service {
+        router = router.fallback_service(service);
+    }
+
+    router = router
         .layer(DefaultBodyLimit::disable())
+        .layer(CorsLayer::permissive());
+
+    let server = axum::serve(listener, router).with_graceful_shutdown(shutdown_signal());
+    let url = format!("http://localhost:{port}");
+
+    println!("[server] running on {url}");
+    server.await?;
+
+    Ok(())
 }
 
 pub async fn process_urls_handler(

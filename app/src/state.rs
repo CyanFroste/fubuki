@@ -1,33 +1,38 @@
-use crate::types::{Config, Db, Domain, GetLinksParams, Link, ProcessedUrl, Result};
-use crate::utils::{host_with_port, scrape_icon};
+use crate::types::{BrowserTask, Config, Db, Domain, GetLinksParams, Link, Result, ScrapedData};
+use crate::utils::{host_with_port, scrape_data};
 use anyhow::anyhow;
 use futures::StreamExt;
 use futures::stream;
 use reqwest::Client as HttpClient;
-use scraper::{Html, Selector};
 use sqlx::{QueryBuilder, Sqlite};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
 #[derive(Clone)]
 pub struct State {
-    pub config: Arc<Config>,
     pub http_client: HttpClient,
+    pub config: Arc<Config>,
     pub db: Db,
+    pub browser_tx: mpsc::Sender<BrowserTask>,
 }
 
 impl State {
-    pub fn new(config: Config, http_client: HttpClient) -> Self {
+    pub fn new(config: Config, browser_tx: mpsc::Sender<BrowserTask>) -> Result<Self> {
         let config = Arc::new(config);
         let db = Db::new(&config.db_path);
 
-        Self {
+        let user_agent = format!("{}/{}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+        let http_client = HttpClient::builder().user_agent(user_agent).build()?;
+
+        Ok(Self {
             http_client,
             config,
             db,
-        }
+            browser_tx,
+        })
     }
 
     pub async fn process_urls(&self, urls: Vec<String>) -> Result<Vec<String>> {
@@ -53,7 +58,7 @@ impl State {
                         let _global_permit = global_limit.acquire().await?;
                         let host_limit = host_limiter.get(&host).await;
 
-                        let ProcessedUrl {
+                        let ScrapedData {
                             title,
                             thumbnail,
                             icon,
@@ -140,7 +145,7 @@ impl State {
         Ok(failed)
     }
 
-    async fn process_url(&self, url: &Url) -> Result<ProcessedUrl> {
+    async fn process_url(&self, url: &Url) -> Result<ScrapedData> {
         let res = self
             .http_client
             .get(url.as_str())
@@ -148,25 +153,33 @@ impl State {
             .await
             .map_err(|err| anyhow!("{err}"))?;
 
-        let body = res.text().await?;
-        let document = Html::parse_document(&body);
+        let content = res.text().await?;
 
-        let selector = Selector::parse("title").map_err(|err| anyhow!("{err}"))?;
-        let title = document.select(&selector).next().map(|x| x.inner_html());
+        if let Ok(data) = scrape_data(&content, url)
+            && data.title.is_some()
+            && data.thumbnail.is_some()
+            && data.icon.is_some()
+        {
+            Ok(data)
+        } else {
+            // cloudflare is a pain in the ass; fuck it!
+            // just send page data from the browser extension
 
-        let selector =
-            Selector::parse(r#"meta[property="og:image"]"#).map_err(|err| anyhow!("{err}"))?;
-        let thumbnail = document
-            .select(&selector)
-            .next()
-            .and_then(|x| x.value().attr("content"))
-            .map(|x| x.to_string());
+            let (tx, rx) = oneshot::channel();
 
-        Ok(ProcessedUrl {
-            title,
-            thumbnail,
-            icon: scrape_icon(&document, url.clone()),
-        })
+            self.browser_tx
+                .send(BrowserTask {
+                    url: url.clone(),
+                    res: tx,
+                })
+                .await
+                .unwrap();
+
+            let content = rx.await??;
+            let data = scrape_data(&content, url)?;
+
+            Ok(data)
+        }
     }
 
     pub async fn get_links(&self, params: GetLinksParams) -> Result<Vec<Link>> {

@@ -9,6 +9,8 @@ use sqlx::{Pool, Sqlite};
 use std::env;
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use tokio::sync::oneshot;
+use url::Url;
 
 pub type Result<T, E = anyhow::Error> = std::result::Result<T, E>;
 
@@ -40,10 +42,15 @@ pub struct GetLinksParams {
 }
 
 #[derive(Debug, Default)]
-pub struct ProcessedUrl {
+pub struct ScrapedData {
     pub title: Option<String>,
     pub thumbnail: Option<String>,
     pub icon: Option<String>,
+}
+
+pub struct BrowserTask {
+    pub url: Url,
+    pub res: oneshot::Sender<Result<String>>,
 }
 
 #[derive(Debug, Clone)]

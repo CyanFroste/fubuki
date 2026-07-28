@@ -23,5 +23,8 @@ scraper = "0.27.0"
 url = "2.5.8"
 futures = "0.3.33"
 
+# https://docs.obscura.sh/guides/use-as-a-rust-library
+obscura = { git = "https://github.com/h4ckf0r0day/obscura" }
+
 [build-dependencies]
 winres = "0.1.12"
