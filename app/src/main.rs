@@ -32,12 +32,15 @@ async fn main() -> Result<()> {
     match &args.command {
         Some(Command::Init) => state.db.init().await,
 
-        Some(Command::ProcessUrls { path }) => {
+        Some(Command::ProcessUrls {
+            path,
+            process_duplicates,
+        }) => {
             let reader = BufReader::new(File::open(path)?);
             let items: Vec<String> = reader.lines().map_while(Result::ok).collect();
 
             let total = items.len();
-            let failed = state.process_urls(items).await?;
+            let failed = state.process_urls(items, *process_duplicates).await?;
 
             println!(
                 "processed {} of {total} items. {} failed. \n\n{}",
@@ -115,6 +118,9 @@ pub enum Command {
         /// Path to the text file containing the URLs (one per line)
         #[arg(short, long)]
         path: PathBuf,
+        /// Whether to process duplicate URLs
+        #[arg(short = 'd', long)]
+        process_duplicates: bool,
     },
     /// Get Links
     GetLinks {

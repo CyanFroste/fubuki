@@ -6,6 +6,7 @@ import {
   Autocomplete,
   AutocompleteItem,
   Button,
+  Checkbox,
   cn,
   Image,
   Input,
@@ -64,6 +65,7 @@ export function HomeScreen() {
 
   const [linksToRemove, setLinksToRemove] = useState<Link[]>([])
   const [urlsToProcess, setUrlsToProcess] = useState<string[]>([])
+  const [processDuplicates, setProcessDuplicates] = useState(false)
 
   const [oldHost, setOldHost] = useState('')
   const [newHost, setNewHost] = useState('')
@@ -80,7 +82,7 @@ export function HomeScreen() {
   }
 
   const mutationProcessUrl = useMutation({
-    mutationFn: async () => await client.processUrls(urlsToProcess),
+    mutationFn: async () => await client.processUrls(urlsToProcess, processDuplicates),
     onSuccess: failed => {
       if (!failed.length) refetchData()
       processUrlsModal.onClose()
@@ -387,15 +389,28 @@ export function HomeScreen() {
               <Textarea
                 radius="none"
                 minRows={40}
-                maxRows={100}
+                maxRows={40}
                 value={urlsToProcess.join('\n')}
                 onValueChange={value => setUrlsToProcess(value.split('\n'))}
                 placeholder="Paste newline seperated URLs here..."
               />
             </div>
 
-            <div className="flex items-center gap-2 p-4 justify-end">
-              <Button radius="sm" variant="flat" onPress={processUrlsModal.onClose}>
+            <div className="flex items-center gap-2 p-4">
+              <Checkbox
+                radius="full"
+                isSelected={processDuplicates}
+                onValueChange={setProcessDuplicates}
+              >
+                Process duplicates?
+              </Checkbox>
+
+              <Button
+                radius="sm"
+                variant="flat"
+                className="ml-auto"
+                onPress={processUrlsModal.onClose}
+              >
                 Cancel
               </Button>
 
@@ -434,7 +449,7 @@ function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
   }, [data.thumbnail])
 
   const mutationProcessUrl = useMutation({
-    mutationFn: async () => await client.processUrls([data.url]),
+    mutationFn: async () => await client.processUrls([data.url], true),
     onSuccess: failed => {
       if (!failed.length) refetchData()
     },

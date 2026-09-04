@@ -35,11 +35,29 @@ impl State {
         })
     }
 
-    pub async fn process_urls(&self, urls: Vec<String>) -> Result<Vec<String>> {
-        let urls: HashSet<String> = urls.into_iter().filter(|x| !x.trim().is_empty()).collect();
+    pub async fn process_urls(
+        &self,
+        urls: Vec<String>,
+        process_duplicates: bool,
+    ) -> Result<Vec<String>> {
+        let mut urls: HashSet<String> = urls
+            .into_iter()
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect();
 
         if urls.is_empty() {
             return Ok(Vec::new());
+        }
+
+        if !process_duplicates {
+            let existing_urls: HashSet<String> = sqlx::query_scalar("SELECT url FROM links")
+                .fetch_all(&self.db.pool)
+                .await?
+                .into_iter()
+                .collect();
+
+            urls = urls.difference(&existing_urls).cloned().collect();
         }
 
         let global_limit = Arc::new(Semaphore::new(16));

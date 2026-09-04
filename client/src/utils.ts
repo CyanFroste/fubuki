@@ -64,8 +64,11 @@ export class Client {
     return res.data
   }
 
-  async processUrls(urls: string[]) {
-    return await Client.request<string[]>({ action: 'process-urls', data: urls })
+  async processUrls(urls: string[], processDuplicates: boolean) {
+    return await Client.request<string[]>({
+      action: 'process-urls',
+      data: [urls, processDuplicates],
+    })
   }
 
   async getLinks(params: GetLinksParams) {

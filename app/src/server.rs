@@ -59,9 +59,9 @@ pub async fn run(state: State, client_path: Option<PathBuf>) -> Result<()> {
 
 pub async fn process_urls_handler(
     state: StateExtractor<State>,
-    Json(urls): Json<Vec<String>>,
+    Json((urls, process_duplicates)): Json<(Vec<String>, bool)>,
 ) -> Result<impl IntoResponse, Error> {
-    Ok(Json(state.process_urls(urls).await?))
+    Ok(Json(state.process_urls(urls, process_duplicates).await?))
 }
 
 pub async fn get_links_handler(
