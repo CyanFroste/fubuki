@@ -347,11 +347,24 @@ impl State {
             .await?;
         }
 
-        sqlx::query("UPDATE domains SET host = ? WHERE host = ?")
+        let new_domain_exists: bool = sqlx::query("SELECT 1 FROM domains WHERE host = ?")
             .bind(&new)
-            .bind(&old)
-            .execute(&mut *tx)
-            .await?;
+            .fetch_optional(&mut *tx)
+            .await?
+            .is_some();
+
+        if new_domain_exists {
+            sqlx::query("DELETE FROM domains WHERE host = ?")
+                .bind(&old)
+                .execute(&mut *tx)
+                .await?;
+        } else {
+            sqlx::query("UPDATE domains SET host = ? WHERE host = ?")
+                .bind(&new)
+                .bind(&old)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         tx.commit().await?;
 
