@@ -333,18 +333,31 @@ impl State {
             .await?;
 
         for old_url in old_urls {
-            // ASSUMPTION: this won't fail since we're just replacing the url
             let mut new_url = Url::parse(&old_url)?;
             new_url.set_host(Some(&new))?;
+            let new_url = new_url.to_string();
 
-            sqlx::query(
-                "UPDATE links SET url = ?, host = ?, modified = CURRENT_TIMESTAMP WHERE url = ?",
-            )
-            .bind(&new_url.to_string())
-            .bind(&new)
-            .bind(&old_url)
-            .execute(&mut *tx)
-            .await?;
+            let exists = sqlx::query("SELECT 1 FROM links WHERE url = ?")
+                .bind(&new_url)
+                .fetch_optional(&mut *tx)
+                .await?
+                .is_some();
+
+            if exists {
+                sqlx::query("DELETE FROM links WHERE url = ?")
+                    .bind(&old_url)
+                    .execute(&mut *tx)
+                    .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE links SET url = ?, host = ?, modified = CURRENT_TIMESTAMP WHERE url = ?",
+                )
+                .bind(&new_url)
+                .bind(&new)
+                .bind(&old_url)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
 
         let new_domain_exists: bool = sqlx::query("SELECT 1 FROM domains WHERE host = ?")
