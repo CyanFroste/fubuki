@@ -35,6 +35,7 @@ pub async fn run(state: State, client_path: Option<PathBuf>) -> Result<()> {
         .route("/remove-links", post(remove_links_handler))
         .route("/set-link-favorite", post(set_link_favorite_handler))
         .route("/replace-host", post(replace_host_handler))
+        .route("/get-config", post(get_config_handler))
         .with_state(state);
 
     let mut router = Router::new().nest("/api", api_routes);
@@ -107,6 +108,10 @@ pub async fn replace_host_handler(
     Json((old, new)): Json<(String, String)>,
 ) -> Result<impl IntoResponse, Error> {
     Ok(Json(state.replace_host(old, new).await?))
+}
+
+pub async fn get_config_handler(state: StateExtractor<State>) -> Result<impl IntoResponse, Error> {
+    Ok(Json(state.config.clone()))
 }
 
 async fn shutdown_signal() {
