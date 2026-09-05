@@ -85,6 +85,7 @@ impl Db {
 pub struct Config {
     pub port: u16,
     pub db_path: PathBuf,
+    pub strippable_prefixes: Vec<String>,
 }
 
 impl Config {

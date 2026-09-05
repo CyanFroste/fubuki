@@ -53,9 +53,32 @@ pub fn host_with_port(url: &Url) -> Option<String> {
     }
 }
 
+pub fn normalize_host(host: &str, strippable_prefixes: &[impl AsRef<str>]) -> String {
+    let mut host = host.to_string();
+
+    // repeatedly strip prefixes
+    loop {
+        let mut stripping = false;
+
+        for prefix in strippable_prefixes {
+            if let Some(rest) = host.strip_prefix(prefix.as_ref()) {
+                host = rest.to_string();
+                stripping = true;
+                break;
+            }
+        }
+
+        if !stripping {
+            break;
+        }
+    }
+
+    host
+}
+
 pub fn scrape_data(content: &str, url: &Url) -> Result<ScrapedData> {
     let document = Html::parse_document(content);
-    
+
     let selector = Selector::parse("title").map_err(|err| anyhow!("{err}"))?;
     let title = document.select(&selector).next().map(|x| x.inner_html());
 

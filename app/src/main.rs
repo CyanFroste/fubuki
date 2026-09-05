@@ -3,6 +3,9 @@ pub mod state;
 pub mod types;
 pub mod utils;
 
+#[cfg(test)]
+mod tests;
+
 use crate::state::State;
 use crate::types::{BrowserTask, Config, GetLinksParams, Result};
 use crate::utils::{print_items, read_json_array_from_file};

@@ -1,5 +1,5 @@
 use crate::types::{BrowserTask, Config, Db, Domain, GetLinksParams, Link, Result, ScrapedData};
-use crate::utils::{host_with_port, scrape_data};
+use crate::utils::{host_with_port, normalize_host, scrape_data};
 use anyhow::anyhow;
 use futures::StreamExt;
 use futures::stream;
@@ -40,25 +40,19 @@ impl State {
         urls: Vec<String>,
         process_duplicates: bool,
     ) -> Result<Vec<String>> {
-        let mut urls: HashSet<String> = urls
-            .into_iter()
-            .map(|x| x.trim().to_string())
-            .filter(|x| !x.is_empty())
-            .collect();
+        let urls: HashSet<String> = urls.into_iter().collect();
 
         if urls.is_empty() {
             return Ok(Vec::new());
         }
 
-        if !process_duplicates {
-            let existing_urls: HashSet<String> = sqlx::query_scalar("SELECT url FROM links")
+        let existing_urls: Arc<HashSet<String>> = Arc::new(
+            sqlx::query_scalar("SELECT url FROM links")
                 .fetch_all(&self.db.pool)
                 .await?
                 .into_iter()
-                .collect();
-
-            urls = urls.difference(&existing_urls).cloned().collect();
-        }
+                .collect(),
+        );
 
         let global_limit = Arc::new(Semaphore::new(16));
         let host_limiter = Arc::new(HostLimiter::new(4));
@@ -67,11 +61,19 @@ impl State {
             .map(|url| {
                 let global_limit = global_limit.clone();
                 let host_limiter = host_limiter.clone();
+                let existing_urls = existing_urls.clone();
 
                 async move {
                     async {
-                        let url = Url::parse(&url)?;
+                        let mut url = Url::parse(&url)?;
                         let host = host_with_port(&url).ok_or_else(|| anyhow!("host not found"))?;
+                        let host = normalize_host(&host, &self.config.strippable_prefixes);
+
+                        url.set_host(Some(&host))?;
+
+                        if !process_duplicates && existing_urls.contains(url.as_str()) {
+                            return Err(anyhow!("skipped processing duplicate"));
+                        }
 
                         let _global_permit = global_limit.acquire().await?;
                         let host_limit = host_limiter.get(&host).await;
