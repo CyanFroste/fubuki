@@ -65,11 +65,7 @@ impl State {
 
                 async move {
                     async {
-                        let mut url = Url::parse(&url)?;
-                        let host = host_with_port(&url).ok_or_else(|| anyhow!("host not found"))?;
-                        let host = normalize_host(&host, &self.config.strippable_prefixes);
-
-                        url.set_host(Some(&host))?;
+                        let (url, host) = self.parse_and_normalize_url(&url)?;
 
                         if !process_duplicates && existing_urls.contains(url.as_str()) {
                             return Err(anyhow!("skipped processing duplicate"));
@@ -202,6 +198,16 @@ impl State {
         }
     }
 
+    fn parse_and_normalize_url(&self, url: &str) -> Result<(Url, String)> {
+        let mut url = Url::parse(url)?;
+        let host = host_with_port(&url).ok_or_else(|| anyhow!("host not found"))?;
+        let host = normalize_host(&host, &self.config.strippable_prefixes);
+
+        url.set_host(Some(&host))?;
+
+        Ok((url, host))
+    }
+
     pub async fn get_links(&self, params: GetLinksParams) -> Result<Vec<Link>> {
         let mut builder = QueryBuilder::<Sqlite>::new("SELECT * FROM links WHERE 1=1");
 
@@ -234,13 +240,29 @@ impl State {
             return Ok(());
         }
 
+        // let items: Vec<Link> = items
+        //     .into_iter()
+        //     .map(|it| {
+        //         let url = self
+        //             .parse_and_normalize_url(&it.url)
+        //             .map(|(x, _)| x.to_string())
+        //             .unwrap_or(it.url);
+        //         Link { url, ..it }
+        //     })
+        //     .collect();
+
         for chunk in items.chunks(32_766 / 6) {
             let mut qb = QueryBuilder::new(
                 "INSERT INTO links (url, host, title, thumbnail, favorite, modified) ",
             );
 
             qb.push_values(chunk.iter(), |mut b, it| {
-                b.push_bind(&it.url)
+                let url = self
+                    .parse_and_normalize_url(&it.url)
+                    .map(|(x, _)| x.to_string())
+                    .unwrap_or_else(|_| it.url.clone());
+
+                b.push_bind(&url)
                     .push_bind(&it.host)
                     .push_bind(&it.title)
                     .push_bind(&it.thumbnail)
