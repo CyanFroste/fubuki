@@ -77,6 +77,7 @@ export function HomeScreen() {
   const refetchData = async () => {
     await queryClient.refetchQueries({ queryKey: ['links'] })
     await queryDomains.refetch()
+    await queryCounts.refetch()
   }
 
   const mutationProcessUrl = useMutation({
