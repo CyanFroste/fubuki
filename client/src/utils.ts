@@ -17,6 +17,7 @@ import type {
   Domain,
   GetLinksParams,
   LinkFn,
+  Counts,
 } from '@/types'
 
 export const useGlobalState = useStore
@@ -43,6 +44,15 @@ export function createSearchIndex() {
   })
 }
 
+export function createDomainSearchIndex() {
+  return new MiniSearch({
+    idField: 'host',
+    storeFields: ['host'],
+    fields: ['host'],
+    searchOptions: { prefix: true, fuzzy: true },
+  })
+}
+
 type ClientRequest<T> = {
   action:
     | 'process-urls'
@@ -51,6 +61,7 @@ type ClientRequest<T> = {
     | 'remove-links'
     | 'set-link-favorite'
     | 'replace-host'
+    | 'get-counts'
   data?: Nullable<T>
 }
 
@@ -89,6 +100,10 @@ export class Client {
 
   async replaceHost(old: string, replace: string) {
     return await Client.request({ action: 'replace-host', data: [old, replace] })
+  }
+
+  async getCounts() {
+    return await Client.request<Counts>({ action: 'get-counts' })
   }
 
   parseGetLinksParams(params: RawQueryParams): GetLinksParams {

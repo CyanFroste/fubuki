@@ -1,4 +1,6 @@
-use crate::types::{BrowserTask, Config, Db, Domain, GetLinksParams, Link, Result, ScrapedData};
+use crate::types::{
+    BrowserTask, Config, Counts, Db, Domain, GetLinksParams, Link, Result, ScrapedData,
+};
 use crate::utils::{host_with_port, normalize_host, scrape_data};
 use anyhow::anyhow;
 use futures::StreamExt;
@@ -240,31 +242,22 @@ impl State {
             return Ok(());
         }
 
-        // let items: Vec<Link> = items
-        //     .into_iter()
-        //     .map(|it| {
-        //         let url = self
-        //             .parse_and_normalize_url(&it.url)
-        //             .map(|(x, _)| x.to_string())
-        //             .unwrap_or(it.url);
-        //         Link { url, ..it }
-        //     })
-        //     .collect();
-
         for chunk in items.chunks(32_766 / 6) {
             let mut qb = QueryBuilder::new(
                 "INSERT INTO links (url, host, title, thumbnail, favorite, modified) ",
             );
 
             qb.push_values(chunk.iter(), |mut b, it| {
-                let url = self
+                if let Ok((url, host)) = self
                     .parse_and_normalize_url(&it.url)
-                    .map(|(x, _)| x.to_string())
-                    .unwrap_or_else(|_| it.url.clone());
+                    .map(|(x, y)| (x.to_string(), y))
+                {
+                    b.push_bind(&url).push_bind(&host);
+                } else {
+                    b.push_bind(&it.url).push_bind(&it.host);
+                }
 
-                b.push_bind(&url)
-                    .push_bind(&it.host)
-                    .push_bind(&it.title)
+                b.push_bind(&it.title)
                     .push_bind(&it.thumbnail)
                     .push_bind(it.favorite);
 
@@ -406,6 +399,18 @@ impl State {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    pub async fn get_counts(&self) -> Result<Counts> {
+        let links: u64 = sqlx::query_scalar("SELECT COUNT(*) FROM links")
+            .fetch_one(&self.db.pool)
+            .await?;
+
+        let domains: u64 = sqlx::query_scalar("SELECT COUNT(*) FROM domains")
+            .fetch_one(&self.db.pool)
+            .await?;
+
+        Ok(Counts { links, domains })
     }
 }
 

@@ -15,6 +15,8 @@ export type Domain = {
   icon?: Nullable<string>
 }
 
+export type Counts = { links: number; domains: number }
+
 export type GetLinksParams = {
   host?: Nullable<string>
   favorite?: Nullable<boolean>

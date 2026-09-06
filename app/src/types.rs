@@ -48,6 +48,12 @@ pub struct ScrapedData {
     pub icon: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct Counts {
+    pub links: u64,
+    pub domains: u64,
+}
+
 pub struct BrowserTask {
     pub url: Url,
     pub res: oneshot::Sender<Result<String>>,

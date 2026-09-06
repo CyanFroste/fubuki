@@ -3,8 +3,6 @@ import { Link as RouterLink, useNavigate } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useDebounce } from 'use-debounce'
 import {
-  Autocomplete,
-  AutocompleteItem,
   Button,
   Checkbox,
   cn,
@@ -22,16 +20,15 @@ import {
   ClockIcon,
   HeartIcon,
   HeartOffIcon,
-  MoveRightIcon,
   PlusIcon,
   RefreshCwIcon,
-  ReplaceIcon,
   SearchIcon,
   TrashIcon,
 } from 'lucide-react'
 import { VirtualList } from '@/components/lists'
+import { Domains, DomainIcon } from '@/components/domains'
 import { useUrlParams, Client, link, createSearchIndex } from '@/utils'
-import type { Domain, Link, Nullable } from '@/types'
+import type { Domain, Link } from '@/types'
 import type {
   ContainerProps as ListContainerProps,
   HeaderProps as ListHeaderProps,
@@ -56,6 +53,11 @@ export function HomeScreen() {
     queryFn: client.getDomains.bind(client),
   })
 
+  const queryCounts = useQuery({
+    queryKey: ['counts'],
+    queryFn: async () => await client.getCounts(),
+  })
+
   const linksMap = new Map(queryLinks.data?.map(it => [it.url, it]) ?? [])
   const [filtered, setFiltered] = useState<Link[]>([])
   const [counts, setCounts] = useState<Map<string, number>>(new Map())
@@ -67,10 +69,6 @@ export function HomeScreen() {
   const [urlsToProcess, setUrlsToProcess] = useState<string[]>([])
   const [processDuplicates, setProcessDuplicates] = useState(false)
 
-  const [oldHost, setOldHost] = useState('')
-  const [newHost, setNewHost] = useState('')
-
-  const replaceHostModal = useDisclosure()
   const removeLinksModal = useDisclosure()
   const processUrlsModal = useDisclosure()
 
@@ -87,20 +85,6 @@ export function HomeScreen() {
       if (!failed.length) refetchData()
       processUrlsModal.onClose()
       setUrlsToProcess([])
-    },
-  })
-
-  const mutationReplaceHost = useMutation({
-    mutationFn: async () => {
-      if (!oldHost.trim() || !newHost.trim() || oldHost === newHost) return
-      await client.replaceHost(oldHost, newHost)
-    },
-    onSuccess: () => {
-      refetchData()
-      replaceHostModal.onClose()
-      navigate(link('/', { host: newHost }))
-      setOldHost('')
-      setNewHost('')
     },
   })
 
@@ -151,10 +135,6 @@ export function HomeScreen() {
     setCounts(map)
   }, [queryLinks.data, queryDomains.data])
 
-  useEffect(() => {
-    setNewHost(oldHost)
-  }, [oldHost])
-
   return (
     <>
       <div className="fixed inset-x-0 top-0 z-50 bg-background/40 backdrop-blur-lg border-b border-divider">
@@ -186,7 +166,7 @@ export function HomeScreen() {
               <Input
                 radius="sm"
                 startContent={<SearchIcon className="text-lg" />}
-                placeholder="Search..."
+                placeholder="Search"
                 value={searchQuery}
                 onValueChange={setSearchQuery}
                 onClear={() => setSearchQuery('')}
@@ -210,36 +190,19 @@ export function HomeScreen() {
                 />
               </label>
 
+              <div className="text-tiny text-default-500 ml-auto">
+                {queryCounts.data?.links} links and {queryCounts.data?.domains} domains
+              </div>
+
               <hr className="border-divider" />
             </div>
 
-            <div className="flex items-center px-4 pb-4">
-              <div className="text-lg font-semibold">Domains</div>
-
-              <Button
-                isIconOnly
-                variant="light"
-                radius="full"
-                className="ml-auto"
-                onPress={() => {
-                  setOldHost(params.host ?? '')
-                  replaceHostModal.onOpen()
-                }}
-              >
-                <ReplaceIcon className="text-lg" />
-              </Button>
-            </div>
-
-            <div className="flex flex-col h-full overflow-auto px-4 pb-4">
-              {queryDomains.data?.map(domain => (
-                <DomainCard
-                  key={domain.host}
-                  data={domain}
-                  count={counts.get(domain.host)}
-                  isActive={params.host === domain.host}
-                />
-              ))}
-            </div>
+            <Domains
+              counts={counts}
+              params={params}
+              refetchData={refetchData}
+              data={queryDomains.data ?? []}
+            />
           </div>
         </div>
 
@@ -264,68 +227,6 @@ export function HomeScreen() {
           )}
         </VirtualList>
       </div>
-
-      <Modal
-        size="5xl"
-        radius="sm"
-        hideCloseButton
-        isOpen={replaceHostModal.isOpen}
-        onOpenChange={replaceHostModal.onOpenChange}
-        isDismissable={!mutationReplaceHost.isPending}
-        isKeyboardDismissDisabled={mutationReplaceHost.isPending}
-      >
-        <ModalContent>
-          <div className="flex flex-col">
-            <div className="text-large font-semibold p-4 border-b border-divider leading-none">
-              Replace Host
-            </div>
-
-            <div className="p-4 border-b border-divider h-80">
-              <div className="flex items-center gap-4">
-                <Autocomplete
-                  radius="sm"
-                  label="Select Domain"
-                  value={oldHost}
-                  onChange={(key: Nullable<React.Key>) => setOldHost(key?.toString() ?? '')}
-                  defaultItems={queryDomains.data ?? []}
-                >
-                  {it => (
-                    <AutocompleteItem key={it.host} startContent={<DomainIcon data={it} />}>
-                      {it.host}
-                    </AutocompleteItem>
-                  )}
-                </Autocomplete>
-
-                <MoveRightIcon className="text-xl shrink-0 text-default-500" />
-
-                <Input
-                  autoFocus
-                  radius="sm"
-                  label="New Host"
-                  value={newHost}
-                  onValueChange={setNewHost}
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 p-4 justify-end">
-              <Button radius="sm" variant="flat" onPress={replaceHostModal.onClose}>
-                Cancel
-              </Button>
-
-              <Button
-                radius="sm"
-                color="success"
-                isLoading={mutationReplaceHost.isPending}
-                onPress={() => mutationReplaceHost.mutate()}
-                isDisabled={!oldHost.trim() || !newHost.trim() || oldHost === newHost}
-              >
-                <CheckIcon className="text-lg" /> Confirm
-              </Button>
-            </div>
-          </div>
-        </ModalContent>
-      </Modal>
 
       <Modal
         size="5xl"
@@ -545,60 +446,6 @@ function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
         </div>
       </div>
     </div>
-  )
-}
-
-type DomainCardProps = { data: Domain; count?: number; isActive?: boolean }
-
-function DomainCard({ data, count, isActive }: DomainCardProps) {
-  return (
-    <Button
-      as={RouterLink}
-      to={link('/', { host: data.host })}
-      key={data.host}
-      radius="sm"
-      variant={isActive ? 'flat' : 'light'}
-      className="justify-start shrink-0 px-2"
-    >
-      <DomainIcon data={data} />
-
-      <ScrollShadow hideScrollBar orientation="horizontal">
-        {data.host}
-      </ScrollShadow>
-
-      {count && (
-        <div className="ml-auto text-tiny py-1 px-2 leading-none text-default-600 bg-default-50 rounded-full">
-          {count}
-        </div>
-      )}
-    </Button>
-  )
-}
-
-type DomainIconProps = { data: Domain }
-
-function DomainIcon({ data }: DomainIconProps) {
-  const [placeholder, setPlaceholder] = useState(`https://${data.host}/favicon.ico`)
-  const [icon, setIcon] = useState(data.icon ?? placeholder)
-
-  useEffect(() => {
-    setIcon(data.icon ?? placeholder)
-  }, [data.icon])
-
-  return (
-    <Image
-      src={icon}
-      radius="none"
-      shadow="none"
-      removeWrapper
-      disableSkeleton
-      className="size-4 shrink-0 mr-1"
-      onError={() => {
-        const p = '/images/domain-icon-placeholder.png'
-        setPlaceholder(p)
-        setIcon(p)
-      }}
-    />
   )
 }
 
