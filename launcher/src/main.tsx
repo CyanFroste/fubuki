@@ -35,6 +35,7 @@ import {
 
 const SIDECAR_KEY = '../../bin/fubuki'
 const CONFIG_FILE_NAME = 'fubuki-config.json'
+const DEFAULT_PORT = 3200
 
 const currentWindow = getCurrentWindow()
 const [initialStartUrl] = (await getStartUrls()) ?? []
@@ -72,7 +73,7 @@ export function Window() {
   const [outputs, setOutputs] = useState<string[]>([])
   const [startUrl, setStartUrl] = useState(initialStartUrl)
 
-  const [port, setPort] = useState('')
+  const [port, setPort] = useState(DEFAULT_PORT.toString())
   const [dbPath, setDbPath] = useState('')
   const [showLogs, setShowLogs] = useState(false)
 
@@ -89,7 +90,7 @@ export function Window() {
       const config = await getConfig()
       addOutput(`loaded config: ${JSON.stringify(config)}`)
 
-      setPort(config.port.toString() ?? '3200')
+      setPort(config.port.toString() ?? DEFAULT_PORT.toString())
       setDbPath(config.dbPath)
 
       const cmd = Command.sidecar(SIDECAR_KEY, [
