@@ -23,12 +23,15 @@ import {
   PlusIcon,
   RefreshCwIcon,
   SearchIcon,
+  TagsIcon,
+  TextSearchIcon,
   TrashIcon,
 } from 'lucide-react'
 import { VirtualList } from '@/components/lists'
 import { Domains, DomainIcon } from '@/components/domains'
+import { Tags, TagsSelect } from '@/components/tags'
 import { useUrlParams, Client, link, createSearchIndex } from '@/utils'
-import type { Domain, Link } from '@/types'
+import type { Domain, Link, Nullable } from '@/types'
 import type {
   ContainerProps as ListContainerProps,
   HeaderProps as ListHeaderProps,
@@ -58,6 +61,11 @@ export function HomeScreen() {
     queryFn: async () => await client.getCounts(),
   })
 
+  const queryTags = useQuery({
+    queryKey: ['tags'],
+    queryFn: async () => await client.getTags(),
+  })
+
   const linksMap = new Map(queryLinks.data?.map(it => [it.url, it]) ?? [])
   const [filtered, setFiltered] = useState<Link[]>([])
   const [counts, setCounts] = useState<Map<string, number>>(new Map())
@@ -68,9 +76,12 @@ export function HomeScreen() {
   const [linksToRemove, setLinksToRemove] = useState<Link[]>([])
   const [urlsToProcess, setUrlsToProcess] = useState<string[]>([])
   const [processDuplicates, setProcessDuplicates] = useState(false)
+  const [linkToManageTags, setLinkToManageTags] = useState<Nullable<Link>>(null)
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
 
   const removeLinksModal = useDisclosure()
   const processUrlsModal = useDisclosure()
+  const manageTagsModal = useDisclosure()
 
   const removeConfirmButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -78,6 +89,7 @@ export function HomeScreen() {
     await queryClient.refetchQueries({ queryKey: ['links'] })
     await queryDomains.refetch()
     await queryCounts.refetch()
+    await queryTags.refetch()
   }
 
   const mutationProcessUrl = useMutation({
@@ -106,6 +118,30 @@ export function HomeScreen() {
       }
 
       setLinksToRemove([])
+    },
+  })
+
+  const mutationSetLinkTags = useMutation({
+    mutationFn: async (tags: string[]) => {
+      if (linkToManageTags)
+        return await client.setLinkTags({ url: linkToManageTags.url, tags: tags.toSorted() })
+    },
+    onSuccess: () => {
+      refetchData()
+      manageTagsModal.onClose()
+      setLinkToManageTags(null)
+      setSelectedTags([])
+    },
+  })
+
+  const mutationExtractLinkTags = useMutation({
+    mutationFn: async () => {
+      if (linkToManageTags) return await client.extractLinkTags(linkToManageTags)
+    },
+    onSuccess: data => {
+      if (!data) return
+      const tags = new Set(data.concat(linkToManageTags?.tags ?? []))
+      setSelectedTags([...tags].toSorted())
     },
   })
 
@@ -140,19 +176,21 @@ export function HomeScreen() {
     <>
       <div className="fixed inset-x-0 top-0 z-50 bg-background/40 backdrop-blur-lg border-b border-divider">
         <div className="container h-[calc(--spacing(12)-1px)] mx-auto flex items-center px-4">
-          <RouterLink to="/" className="flex items-center gap-2.5 group">
+          <RouterLink to="/" className="flex items-center gap-2.5 group mr-auto">
             <Image radius="sm" shadow="none" src="/images/icon.png" className="size-8" />
             <div className="text-2xl font-semibold leading-none group-hover:text-primary-500 transition-colors">
               Fubuki
             </div>
           </RouterLink>
 
+          <Tags data={queryTags.data ?? []} refetchData={() => queryTags.refetch()} />
+
           <Button
             size="sm"
             radius="none"
             variant="light"
             color="primary"
-            className="ml-auto text-small h-full"
+            className="text-small h-full"
             onPress={processUrlsModal.onOpen}
           >
             <PlusIcon className="text-base" /> Add Links
@@ -224,6 +262,11 @@ export function HomeScreen() {
 
                 setTimeout(() => removeConfirmButtonRef.current?.focus(), 100)
               }}
+              onManageTags={() => {
+                manageTagsModal.onOpen()
+                setLinkToManageTags(item)
+                setSelectedTags(item.tags ?? [])
+              }}
             />
           )}
         </VirtualList>
@@ -266,6 +309,63 @@ export function HomeScreen() {
                 isLoading={mutationRemoveLinks.isPending}
               >
                 <CheckIcon className="text-lg" /> Confirm
+              </Button>
+            </div>
+          </div>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        size="5xl"
+        radius="sm"
+        hideCloseButton
+        isOpen={manageTagsModal.isOpen}
+        onOpenChange={manageTagsModal.onOpenChange}
+        isDismissable={!mutationSetLinkTags.isPending}
+        isKeyboardDismissDisabled={mutationSetLinkTags.isPending}
+      >
+        <ModalContent>
+          <div className="flex flex-col">
+            <div className="text-large font-semibold p-4 border-b border-divider leading-none">
+              Manage Tags
+            </div>
+
+            {linkToManageTags && (
+              <div className="flex flex-col gap-4 p-4 border-b border-divider">
+                <div className="flex flex-col gap-0.5">
+                  <div>{linkToManageTags.title}</div>
+                  <div className="text-small text-default-500">{linkToManageTags.url}</div>
+                </div>
+
+                <TagsSelect
+                  options={queryTags.data ?? []}
+                  values={selectedTags}
+                  onChange={setSelectedTags}
+                />
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 p-4 justify-end">
+              <Button radius="sm" variant="flat" onPress={manageTagsModal.onClose}>
+                Cancel
+              </Button>
+
+              <Button
+                radius="sm"
+                color="primary"
+                onPress={() => mutationExtractLinkTags.mutate()}
+                isLoading={mutationExtractLinkTags.isPending}
+              >
+                <TextSearchIcon className="text-lg" /> Auto Extract
+              </Button>
+
+              <Button
+                radius="sm"
+                color="warning"
+                onPress={() => mutationSetLinkTags.mutate(selectedTags)}
+                isLoading={mutationSetLinkTags.isPending}
+              >
+                <CheckIcon className="text-lg" /> Set Selected
               </Button>
             </div>
           </div>
@@ -338,9 +438,10 @@ type LinkCardProps = {
   domain?: Domain
   refetchData: () => void
   onRemove: () => void
+  onManageTags: () => void
 }
 
-function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
+function LinkCard({ data, domain, refetchData, onRemove, onManageTags }: LinkCardProps) {
   const placeholderThumbnail = '/images/thumbnail-placeholder.png'
   const [thumbnail, setThumbnail] = useState(data.thumbnail ?? placeholderThumbnail)
 
@@ -360,13 +461,11 @@ function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
   const mutationSetFavorite = useMutation({
     mutationFn: async () =>
       await client.setLinkFavorite({ url: data.url, favorite: !data.favorite }),
-    onSuccess: () => {
-      refetchData()
-    },
+    onSuccess: () => refetchData(),
   })
 
   return (
-    <div className="flex p-4 border-b border-divider gap-6 h-36">
+    <div className="flex p-4 border-b border-divider gap-6 h-36 group">
       <div className="h-full aspect-video overflow-hidden rounded-small shrink-0">
         <Image
           isBlurred
@@ -407,43 +506,68 @@ function LinkCard({ data, domain, refetchData, onRemove }: LinkCardProps) {
           </div>
         </RouterLink>
 
-        <div className="flex items-end mt-auto">
-          <div className="text-tiny flex items-center gap-1 text-default-500">
-            <ClockIcon /> {modified}
+        <div className="flex mt-auto gap-4">
+          <div className="flex flex-col gap-2 w-full mt-auto overflow-auto">
+            {data.tags && (
+              <div className="flex gap-2 items-center">
+                <TagsIcon className="text-tiny text-default-500 shrink-0" />
+
+                <ScrollShadow hideScrollBar orientation="horizontal">
+                  <div className="flex gap-1 items-center">
+                    {data.tags.map(tag => (
+                      <div
+                        key={tag}
+                        className="text-tiny py-1 px-2 leading-none font-medium text-default-500 bg-default-100 rounded-small"
+                      >
+                        {tag}
+                      </div>
+                    ))}
+                  </div>
+                </ScrollShadow>
+              </div>
+            )}
+
+            <div className="text-tiny flex items-center gap-2 text-default-500">
+              <ClockIcon /> {modified}
+            </div>
           </div>
 
-          <Button
-            isIconOnly
-            variant="light"
-            radius="full"
-            color="danger"
-            className="ml-auto"
-            onPress={onRemove}
-          >
-            <TrashIcon className="text-base text-danger-600" />
-          </Button>
+          <div className="flex items-end mt-auto gap-2">
+            <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Button isIconOnly variant="light" radius="full" onPress={onManageTags}>
+                <TagsIcon className="text-base" />
+              </Button>
 
-          <Button
-            isIconOnly
-            radius="full"
-            variant="light"
-            isLoading={mutationProcessUrl.isPending}
-            onPress={() => mutationProcessUrl.mutate()}
-          >
-            <RefreshCwIcon className="text-base" />
-          </Button>
+              <Button
+                isIconOnly
+                radius="full"
+                variant="light"
+                isLoading={mutationProcessUrl.isPending}
+                onPress={() => mutationProcessUrl.mutate()}
+              >
+                <RefreshCwIcon className="text-base" />
+              </Button>
 
-          <Button
-            isIconOnly
-            radius="full"
-            color="success"
-            className="ml-2 text-base text-success-600"
-            variant={data.favorite ? 'flat' : 'light'}
-            isLoading={mutationSetFavorite.isPending}
-            onPress={() => mutationSetFavorite.mutate()}
-          >
-            {data.favorite ? <HeartOffIcon /> : <HeartIcon />}
-          </Button>
+              <Button isIconOnly variant="light" radius="full" color="danger" onPress={onRemove}>
+                <TrashIcon className="text-base text-danger-600" />
+              </Button>
+            </div>
+
+            <Button
+              isIconOnly
+              radius="full"
+              color="success"
+              className={cn(
+                'text-base text-success-600',
+                !data.favorite && 'opacity-0 group-hover:opacity-100 transition-opacity',
+              )}
+              variant={data.favorite ? 'flat' : 'light'}
+              isLoading={mutationSetFavorite.isPending}
+              onPress={() => mutationSetFavorite.mutate()}
+            >
+              {data.favorite ? <HeartOffIcon /> : <HeartIcon />}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

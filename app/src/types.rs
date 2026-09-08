@@ -5,6 +5,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::types::Json as SqlJson;
 use sqlx::{Pool, Sqlite};
 use std::env;
 use std::fs::File;
@@ -26,6 +27,8 @@ pub struct Link {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbnail: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<SqlJson<Vec<String>>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow, Default)]

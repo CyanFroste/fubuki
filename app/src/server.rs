@@ -34,8 +34,12 @@ pub async fn run(state: State, client_path: Option<PathBuf>) -> Result<()> {
         .route("/add-domains", post(add_domains_handler))
         .route("/remove-links", post(remove_links_handler))
         .route("/set-link-favorite", post(set_link_favorite_handler))
+        .route("/set-link-tags", post(set_link_tags_handler))
         .route("/replace-host", post(replace_host_handler))
         .route("/get-counts", post(get_counts_handler))
+        .route("/get-tags", post(get_tags_handler))
+        .route("/set-tags", post(set_tags_handler))
+        .route("/extract-link-tags", post(extract_link_tags_handler))
         .route("/get-config", post(get_config_handler))
         .with_state(state);
 
@@ -104,6 +108,13 @@ pub async fn set_link_favorite_handler(
     Ok(Json(state.set_link_favorite(url, favorite).await?))
 }
 
+pub async fn set_link_tags_handler(
+    state: StateExtractor<State>,
+    Json((url, tags)): Json<(String, Vec<String>)>,
+) -> Result<impl IntoResponse, Error> {
+    Ok(Json(state.set_link_tags(url, tags).await?))
+}
+
 pub async fn replace_host_handler(
     state: StateExtractor<State>,
     Json((old, new)): Json<(String, String)>,
@@ -113,6 +124,26 @@ pub async fn replace_host_handler(
 
 pub async fn get_counts_handler(state: StateExtractor<State>) -> Result<impl IntoResponse, Error> {
     Ok(Json(state.get_counts().await?))
+}
+
+pub async fn get_tags_handler(state: StateExtractor<State>) -> Result<impl IntoResponse, Error> {
+    Ok(Json(state.get_tags().await?))
+}
+
+pub async fn set_tags_handler(
+    state: StateExtractor<State>,
+    Json(items): Json<Vec<String>>,
+) -> Result<impl IntoResponse, Error> {
+    Ok(Json(state.set_tags(items).await?))
+}
+
+pub async fn extract_link_tags_handler(
+    state: StateExtractor<State>,
+    Json(item): Json<Link>,
+) -> Result<impl IntoResponse, Error> {
+    let ref_tags = state.get_tags().await?;
+
+    Ok(Json(state.extract_link_tags(&item, &ref_tags)))
 }
 
 pub async fn get_config_handler(state: StateExtractor<State>) -> Result<impl IntoResponse, Error> {

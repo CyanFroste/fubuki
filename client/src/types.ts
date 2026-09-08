@@ -5,6 +5,7 @@ export type Link = {
   url: string
   host: string
   title?: Nullable<string>
+  tags?: Nullable<string[]>
   thumbnail?: Nullable<string>
   favorite?: Nullable<boolean>
   modified?: Nullable<string>

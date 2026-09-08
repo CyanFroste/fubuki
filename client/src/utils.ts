@@ -39,7 +39,7 @@ export function createSearchIndex() {
   return new MiniSearch({
     idField: 'url',
     storeFields: ['url'],
-    fields: ['title', 'url', 'host'],
+    fields: ['title', 'url', 'host', 'tags'],
     searchOptions: { boost: { title: 2 }, prefix: true, fuzzy: true },
   })
 }
@@ -60,8 +60,12 @@ type ClientRequest<T> = {
     | 'get-domains'
     | 'remove-links'
     | 'set-link-favorite'
+    | 'set-link-tags'
     | 'replace-host'
     | 'get-counts'
+    | 'get-tags'
+    | 'set-tags'
+    | 'extract-link-tags'
   data?: Nullable<T>
 }
 
@@ -98,12 +102,28 @@ export class Client {
     return await Client.request({ action: 'set-link-favorite', data: [url, favorite] })
   }
 
+  async setLinkTags({ url, tags }: Pick<Link, 'url' | 'tags'>) {
+    return await Client.request({ action: 'set-link-tags', data: [url, tags] })
+  }
+
   async replaceHost(old: string, replace: string) {
     return await Client.request({ action: 'replace-host', data: [old, replace] })
   }
 
   async getCounts() {
     return await Client.request<Counts>({ action: 'get-counts' })
+  }
+
+  async getTags() {
+    return await Client.request<string[]>({ action: 'get-tags' })
+  }
+
+  async setTags(data: string[]) {
+    return await Client.request({ action: 'set-tags', data })
+  }
+
+  async extractLinkTags(data: Link) {
+    return await Client.request<string[]>({ action: 'extract-link-tags', data })
   }
 
   parseGetLinksParams(params: RawQueryParams): GetLinksParams {

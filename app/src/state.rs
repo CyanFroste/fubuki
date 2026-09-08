@@ -6,8 +6,9 @@ use anyhow::anyhow;
 use futures::StreamExt;
 use futures::stream;
 use reqwest::Client as HttpClient;
+use sqlx::types::Json as SqlJson;
 use sqlx::{QueryBuilder, Sqlite};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::sync::{mpsc, oneshot};
@@ -48,13 +49,19 @@ impl State {
             return Ok(Vec::new());
         }
 
-        let existing_urls: Arc<HashSet<String>> = Arc::new(
-            sqlx::query_scalar("SELECT url FROM links")
+        let existing_urls: Vec<(String, Option<SqlJson<Vec<String>>>)> =
+            sqlx::query_as("SELECT url, tags FROM links")
                 .fetch_all(&self.db.pool)
-                .await?
+                .await?;
+
+        let existing_urls: Arc<HashMap<String, Vec<String>>> = Arc::new(
+            existing_urls
                 .into_iter()
+                .map(|(url, tags)| (url, tags.map(|x| x.0).unwrap_or_default()))
                 .collect(),
         );
+
+        let ref_tags: Arc<Vec<String>> = Arc::new(self.get_tags().await?);
 
         let global_limit = Arc::new(Semaphore::new(16));
         let host_limiter = Arc::new(HostLimiter::new(4));
@@ -64,12 +71,13 @@ impl State {
                 let global_limit = global_limit.clone();
                 let host_limiter = host_limiter.clone();
                 let existing_urls = existing_urls.clone();
+                let ref_tags = ref_tags.clone();
 
                 async move {
                     async {
                         let (url, host) = self.parse_and_normalize_url(&url)?;
 
-                        if !process_duplicates && existing_urls.contains(url.as_str()) {
+                        if !process_duplicates && existing_urls.contains_key(url.as_str()) {
                             return Err(anyhow!("skipped processing duplicate"));
                         }
 
@@ -86,16 +94,30 @@ impl State {
                             self.process_url(&url).await.unwrap_or_default()
                         };
 
-                        Ok((
-                            Link {
-                                title,
-                                thumbnail,
-                                host: host.clone(),
-                                url: url.to_string(),
-                                ..Default::default()
-                            },
-                            Domain { icon, host },
-                        ))
+                        let mut link = Link {
+                            title,
+                            thumbnail,
+                            host: host.clone(),
+                            url: url.to_string(),
+                            ..Default::default()
+                        };
+
+                        let mut tags: BTreeSet<String> = self
+                            .extract_link_tags(&link, &ref_tags)
+                            .into_iter()
+                            .collect();
+
+                        let existing_tags =
+                            existing_urls.get(url.as_str()).cloned().unwrap_or_default();
+
+                        tags.extend(existing_tags);
+                        let tags: Vec<String> = tags.into_iter().collect();
+
+                        if !tags.is_empty() {
+                            link.tags = Some(SqlJson(tags));
+                        }
+
+                        Ok((link, Domain { icon, host }))
                     }
                     .await
                     .map_err(|err: anyhow::Error| anyhow!("[ {url} ] {err}"))
@@ -139,21 +161,24 @@ impl State {
         }
 
         if !links.is_empty() {
-            QueryBuilder::new("INSERT INTO links (url, host, title, thumbnail) ")
+            QueryBuilder::new("INSERT INTO links (url, host, title, thumbnail, tags) ")
                 .push_values(links.iter(), |mut b, it| {
                     b.push_bind(&it.url)
                         .push_bind(&it.host)
                         .push_bind(&it.title)
-                        .push_bind(&it.thumbnail);
+                        .push_bind(&it.thumbnail)
+                        .push_bind(&it.tags);
                 })
                 .push(
                     " ON CONFLICT(url) DO UPDATE SET
                         title = COALESCE(excluded.title, links.title),
                         thumbnail = COALESCE(excluded.thumbnail, links.thumbnail),
+                        tags = COALESCE(excluded.tags, links.tags),
                         modified = CURRENT_TIMESTAMP
                     WHERE
                         (excluded.title != links.title OR (excluded.title IS NULL) != (links.title IS NULL)) OR
-                        (excluded.thumbnail != links.thumbnail OR (excluded.thumbnail IS NULL) != (links.thumbnail IS NULL))"
+                        (excluded.thumbnail != links.thumbnail OR (excluded.thumbnail IS NULL) != (links.thumbnail IS NULL)) OR
+                        (excluded.tags != links.tags OR (excluded.tags IS NULL) != (links.tags IS NULL))"
                 )
                 .build()
                 .execute(&self.db.pool)
@@ -244,7 +269,7 @@ impl State {
 
         for chunk in items.chunks(32_766 / 6) {
             let mut qb = QueryBuilder::new(
-                "INSERT INTO links (url, host, title, thumbnail, favorite, modified) ",
+                "INSERT INTO links (url, host, title, thumbnail, tags, favorite, modified) ",
             );
 
             qb.push_values(chunk.iter(), |mut b, it| {
@@ -257,8 +282,12 @@ impl State {
                     b.push_bind(&it.url).push_bind(&it.host);
                 }
 
+                // TODO: flag to extract tags ?
+                // when sending page data from the browser extension
+
                 b.push_bind(&it.title)
                     .push_bind(&it.thumbnail)
+                    .push_bind(&it.tags)
                     .push_bind(it.favorite);
 
                 if let Some(modified) = it.modified.as_ref() {
@@ -272,10 +301,12 @@ impl State {
                 " ON CONFLICT(url) DO UPDATE SET
                     title = COALESCE(excluded.title, links.title),
                     thumbnail = COALESCE(excluded.thumbnail, links.thumbnail),
+                    tags = COALESCE(excluded.tags, links.tags),
                     modified = CURRENT_TIMESTAMP
                 WHERE
                     (excluded.title != links.title OR (excluded.title IS NULL) != (links.title IS NULL)) OR
-                    (excluded.thumbnail != links.thumbnail OR (excluded.thumbnail IS NULL) != (links.thumbnail IS NULL))"
+                    (excluded.thumbnail != links.thumbnail OR (excluded.thumbnail IS NULL) != (links.thumbnail IS NULL)) OR
+                    (excluded.tags != links.tags OR (excluded.tags IS NULL) != (links.tags IS NULL))"
             );
 
             qb.build().execute(&self.db.pool).await?;
@@ -334,6 +365,16 @@ impl State {
     pub async fn set_link_favorite(&self, url: String, favorite: bool) -> Result<()> {
         sqlx::query("UPDATE links SET favorite = ? WHERE url = ?")
             .bind(favorite)
+            .bind(&url)
+            .execute(&self.db.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn set_link_tags(&self, url: String, tags: Vec<String>) -> Result<()> {
+        sqlx::query("UPDATE links SET tags = ? WHERE url = ?")
+            .bind((!tags.is_empty()).then_some(SqlJson(&tags)))
             .bind(&url)
             .execute(&self.db.pool)
             .await?;
@@ -411,6 +452,59 @@ impl State {
             .await?;
 
         Ok(Counts { links, domains })
+    }
+
+    pub async fn get_tags(&self) -> Result<Vec<String>> {
+        let tags: Vec<String> = sqlx::query_scalar("SELECT name FROM tags ORDER BY name ASC")
+            .fetch_all(&self.db.pool)
+            .await?;
+
+        Ok(tags)
+    }
+
+    pub async fn set_tags(&self, items: Vec<String>) -> Result<()> {
+        if items.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.db.pool.begin().await?;
+
+        sqlx::query("DELETE FROM tags").execute(&mut *tx).await?;
+
+        for chunk in items.chunks(32_766) {
+            let mut qb = QueryBuilder::new("INSERT OR IGNORE INTO tags (name) ");
+
+            qb.push_values(chunk.iter(), |mut b, it| {
+                b.push_bind(it);
+            })
+            .build()
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
+    }
+
+    pub fn extract_link_tags(&self, item: &Link, ref_tags: &[impl AsRef<str>]) -> Vec<String> {
+        let mut tags = HashSet::new();
+
+        // naive implementation for now
+        for tag in ref_tags {
+            let tag = tag.as_ref();
+
+            if item
+                .title
+                .as_ref()
+                .is_some_and(|title| title.to_lowercase().contains(&tag))
+                || item.url.to_lowercase().contains(&tag)
+            {
+                tags.insert(tag.to_string());
+            }
+        }
+
+        tags.into_iter().collect()
     }
 }
 
