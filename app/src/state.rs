@@ -228,7 +228,7 @@ impl State {
     fn parse_and_normalize_url(&self, url: &str) -> Result<(Url, String)> {
         let mut url = Url::parse(url)?;
         let host = host_with_port(&url).ok_or_else(|| anyhow!("host not found"))?;
-        let host = normalize_host(&host, &self.config.strippable_prefixes);
+        let host = normalize_host(&host);
 
         url.set_host(Some(&host))?;
 
@@ -324,7 +324,7 @@ impl State {
             let mut qb = QueryBuilder::new("INSERT INTO domains (host, icon) ");
 
             qb.push_values(chunk.iter(), |mut b, it| {
-                b.push_bind(&it.host).push_bind(&it.icon);
+                b.push_bind(&normalize_host(&it.host)).push_bind(&it.icon);
             })
             .build()
             .execute(&self.db.pool)

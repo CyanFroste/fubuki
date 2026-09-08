@@ -2,4 +2,4 @@
 
 Link Manager
 
-![Fubuki](./screenshots/app.png)
+![Fubuki](./screenshots/home.png)

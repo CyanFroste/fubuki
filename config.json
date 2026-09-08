@@ -1,15 +1,4 @@
 {
   "port": 3200,
-  "dbPath": "F:/archive/data/fubuki.db",
-  "strippablePrefixes": [
-    "www.",
-    "www2.",
-    "www3.",
-    "wap.",
-    "m.",
-    "mobile.",
-    "amp.",
-    "amp2.",
-    "touch."
-  ]
+  "dbPath": "F:/archive/data/fubuki.db"
 }

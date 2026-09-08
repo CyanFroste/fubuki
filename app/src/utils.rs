@@ -53,15 +53,18 @@ pub fn host_with_port(url: &Url) -> Option<String> {
     }
 }
 
-pub fn normalize_host(host: &str, strippable_prefixes: &[impl AsRef<str>]) -> String {
+pub fn normalize_host(host: &str) -> String {
+    const STRIPPABLE_PREFIXES: &[&str] = &[
+        "www.", "www2.", "www3.", "wap.", "m.", "mobile.", "amp.", "amp2.", "touch.",
+    ];
     let mut host = host.to_string();
 
     // repeatedly strip prefixes
     loop {
         let mut stripping = false;
 
-        for prefix in strippable_prefixes {
-            if let Some(rest) = host.strip_prefix(prefix.as_ref()) {
+        for prefix in STRIPPABLE_PREFIXES {
+            if let Some(rest) = host.strip_prefix(prefix) {
                 host = rest.to_string();
                 stripping = true;
                 break;

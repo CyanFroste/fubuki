@@ -34,8 +34,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
       const res =
         host === 'launcher'
-          ? await sendToLauncher('process-urls', [linkUrl])
-          : await sendToServer(host, 'process-urls', [linkUrl])
+          ? await sendToLauncher('process-urls', [[linkUrl], true])
+          : await sendToServer(host, 'process-urls', [[linkUrl], true])
 
       if (!res.ok) throw new Error((await res.text()) || res.statusText)
 
@@ -88,7 +88,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // if (!resAddDomains.ok)
       //   throw new Error((await resAddDomains.text()) || resAddDomains.statusText)
     } catch (err) {
-      sendBasicNotification('Fubuki Error', `failed to page data: ${err?.message}`)
+      sendBasicNotification('Fubuki Error', `failed to send page data: ${err?.message}`)
     }
   }
 })
