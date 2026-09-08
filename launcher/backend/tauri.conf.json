@@ -46,8 +46,8 @@
         "title": "Fubuki Launcher",
         "label": "main",
         "decorations": false,
-        "width": 1600,
-        "height": 900,
+        "width": 360,
+        "height": 720,
         "center": true,
         "visible": false
       }

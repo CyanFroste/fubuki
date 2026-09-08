@@ -1064,7 +1064,7 @@ dependencies = [
 
 [[package]]
 name = "fubuki-launcher"
-version = "1.0.1"
+version = "1.1.0"
 dependencies = [
  "anyhow",
  "serde",

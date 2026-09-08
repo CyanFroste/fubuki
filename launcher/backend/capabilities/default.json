@@ -21,6 +21,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-resizable",
     "core:window:allow-toggle-maximize",
+    "core:app:allow-default-window-icon",
     "deep-link:default",
     "shell:default",
     "fs:default",

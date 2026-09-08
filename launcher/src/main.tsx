@@ -2,7 +2,7 @@ import '@/styles.css'
 
 import ReactDOM from 'react-dom/client'
 import { StrictMode, useEffect, useState } from 'react'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import {
   BaseDirectory,
   resolveResource,
@@ -10,29 +10,61 @@ import {
   appDataDir,
   sep as pathSeparator,
 } from '@tauri-apps/api/path'
+import { defaultWindowIcon, getVersion } from '@tauri-apps/api/app'
+import { TrayIcon } from '@tauri-apps/api/tray'
+import { Menu } from '@tauri-apps/api/menu'
 import { exists, readTextFile, writeTextFile } from '@tauri-apps/plugin-fs'
 import { Child, Command } from '@tauri-apps/plugin-shell'
+import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { open } from '@tauri-apps/plugin-dialog'
 import { getCurrent as getStartUrls, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query'
-import { Button, Input } from '@heroui/react'
+import { Button, cn, Input } from '@heroui/react'
 import {
   CurlyBracesIcon,
   DatabaseIcon,
+  ExternalLinkIcon,
   FolderSearchIcon,
+  LogsIcon,
   MinusIcon,
   PlayIcon,
   SaveCheckIcon,
   SquareIcon,
   XIcon,
 } from 'lucide-react'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { open } from '@tauri-apps/plugin-dialog'
 
 const SIDECAR_KEY = '../../bin/fubuki'
 const CONFIG_FILE_NAME = 'fubuki-config.json'
 
 const currentWindow = getCurrentWindow()
 const [initialStartUrl] = (await getStartUrls()) ?? []
+const versions = await getVersions()
+
+try {
+  const tray = await TrayIcon.new({
+    icon: (await defaultWindowIcon())!,
+    action: event => {
+      switch (event.type) {
+        case 'DoubleClick':
+          currentWindow.show()
+          break
+      }
+    },
+  })
+
+  tray.setMenu(
+    await Menu.new({
+      items: [
+        { id: 'open', text: 'Open', action: () => currentWindow.show() },
+        { id: 'close', text: 'Close', action: () => currentWindow.close() },
+        // TODO dynamic menu items - toggle start/stop
+      ],
+    }),
+  )
+} catch (err) {
+  if (err instanceof Error) console.error(err.message)
+  else console.error(err)
+}
 
 export function Window() {
   const [command, setCommand] = useState<Command<string> | null>(null)
@@ -42,6 +74,7 @@ export function Window() {
 
   const [port, setPort] = useState('')
   const [dbPath, setDbPath] = useState('')
+  const [showLogs, setShowLogs] = useState(false)
 
   const addOutput = (output: string) => setOutputs(prev => prev.concat(output))
   const addErrorOutput = (output: unknown) => {
@@ -127,6 +160,7 @@ export function Window() {
       if (!child) {
         addOutput('starting...')
         setChild(await command.spawn())
+        openUrl(`http://localhost:${port}`)
       } else {
         addOutput('stopping...')
         await child.kill()
@@ -140,6 +174,11 @@ export function Window() {
   useEffect(() => {
     init()
   }, [command])
+
+  useEffect(() => {
+    if (showLogs) currentWindow.setSize(new LogicalSize(1400, 720))
+    else currentWindow.setSize(new LogicalSize(360, 720))
+  }, [showLogs])
 
   useEffect(() => {
     const onDeepLink = async ([url]: string[]) => {
@@ -164,8 +203,10 @@ export function Window() {
         data-tauri-drag-region
         className="flex items-center pointer-events-auto shrink-0 p-2 gap-2 border-b border-divider"
       >
-        <img src="/images/icon.png" alt="logo" className="size-8 mx-2" />
-        <div className="text-large font-semibold leading-none">Fubuki Launcher</div>
+        <img src="/images/icon.png" alt="logo" className="size-8 mx-2 pointer-events-none" />
+        <div className="text-large font-semibold leading-none pointer-events-none">
+          Fubuki Launcher
+        </div>
 
         <Button
           isIconOnly
@@ -184,46 +225,83 @@ export function Window() {
           radius="full"
           color="danger"
           variant="flat"
-          onPress={() => currentWindow.close()}
+          onPress={evt => {
+            if (evt.shiftKey) currentWindow.close()
+            else currentWindow.hide()
+          }}
         >
           <XIcon className="text-lg" />
         </Button>
       </div>
 
       <div className="size-full flex overflow-auto">
-        <div className="flex flex-col gap-4 p-4 shrink-0 border-r border-divider">
+        <div
+          className={cn(
+            'flex flex-col gap-4 p-4 shrink-0',
+            showLogs ? 'border-r border-divider' : 'w-full',
+          )}
+        >
           <Button
             size="lg"
             radius="full"
             variant={child ? 'solid' : 'flat'}
             color={child ? 'danger' : 'success'}
-            className="size-80 text-xl mb-auto"
+            className={cn('text-xl mb-auto', showLogs ? 'size-82' : 'w-full h-auto aspect-square')}
             onPress={onToggle}
           >
             {child ? <SquareIcon /> : <PlayIcon />}
             {child ? 'Stop' : 'Start'}
           </Button>
 
-          <Input
+          <Button
+            fullWidth
             radius="sm"
-            label="Port"
-            value={port}
-            onValueChange={setPort}
-            classNames={{ input: 'font-mono' }}
-            placeholder="Port number"
-          />
+            color="primary"
+            variant="flat"
+            onPress={() => setShowLogs(!showLogs)}
+          >
+            <LogsIcon className="text-lg" /> Show Logs
+          </Button>
 
           <div className="flex items-center gap-2 w-full">
             <Input
               radius="sm"
-              label="DB Path"
+              label="Port"
+              value={port}
+              onValueChange={setPort}
+              classNames={{ input: 'font-mono' }}
+              placeholder="Port number"
+            />
+
+            <Button
+              radius="sm"
+              variant="flat"
+              color="secondary"
+              className="h-full shrink-0"
+              onPress={() => openUrl(`http://localhost:${port}`)}
+            >
+              <ExternalLinkIcon className="text-lg" /> Open
+            </Button>
+          </div>
+
+          <div className="flex items-center gap-2 w-full">
+            <Input
+              radius="sm"
+              label="Database Path"
               value={dbPath}
               onValueChange={setDbPath}
               classNames={{ input: 'font-mono' }}
               placeholder="Path to database file"
             />
 
-            <Button isIconOnly radius="sm" variant="flat" onPress={onPickDbDir}>
+            <Button
+              isIconOnly
+              radius="sm"
+              variant="flat"
+              color="warning"
+              className="h-full w-16"
+              onPress={onPickDbDir}
+            >
               <FolderSearchIcon className="text-lg" />
             </Button>
           </div>
@@ -260,18 +338,30 @@ export function Window() {
               <SaveCheckIcon className="text-lg" /> Save
             </Button>
           </div>
-        </div>
 
-        <div className="flex flex-col p-4 size-full">
-          <div
-            className="size-full rounded-small flex flex-col overflow-auto 
-            bg-gray-900 text-gray-100 font-mono text-small p-4 gap-1.5"
-          >
-            {outputs.map((output, i) => (
-              <div key={i}>{output}</div>
-            ))}
+          <div className="flex items-center">
+            <div className="text-tiny text-default-500">
+              Fubuki v{versions.server} / v{versions.launcher}
+            </div>
+
+            <div className="text-tiny text-default-500 ml-auto">
+              Cyan Froste © {new Date().getFullYear()}
+            </div>
           </div>
         </div>
+
+        {showLogs && (
+          <div className="flex flex-col p-4 size-full">
+            <div
+              className="size-full rounded-small flex flex-col overflow-auto 
+              bg-gray-900 text-gray-100 font-mono text-small p-4 gap-1.5"
+            >
+              {outputs.map((output, i) => (
+                <div key={i}>{output}</div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </>
   )
@@ -334,4 +424,12 @@ async function sendDataFromDeepLink(deepLinkUrl: string, port: number) {
 
   if (!res.ok) throw new Error((await res.text()) ?? res.statusText)
   return await res.json()
+}
+
+async function getVersions() {
+  const cmd = Command.sidecar(SIDECAR_KEY, ['-V'])
+  const [, server] = (await cmd.execute()).stdout.split(' ')
+  const launcher = await getVersion()
+
+  return { server, launcher }
 }
