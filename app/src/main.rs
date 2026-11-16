@@ -100,7 +100,7 @@ async fn main() -> Result<()> {
 }
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Manage and process Doujinshi from multiple sources")]
+#[command(version, about = "Manage your links")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
